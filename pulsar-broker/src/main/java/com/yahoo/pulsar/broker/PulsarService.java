@@ -30,11 +30,13 @@ import java.util.function.Supplier;
 
 import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
 import org.apache.bookkeeper.util.OrderedSafeExecutor;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import org.apache.zookeeper.ZooKeeper;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.yahoo.pulsar.broker.admin.AdminResource;
 import com.yahoo.pulsar.broker.cache.ConfigurationCacheService;
@@ -42,6 +44,7 @@ import com.yahoo.pulsar.broker.cache.LocalZooKeeperCacheService;
 import com.yahoo.pulsar.broker.loadbalance.LeaderElectionService;
 import com.yahoo.pulsar.broker.loadbalance.LeaderElectionService.LeaderListener;
 import com.yahoo.pulsar.broker.loadbalance.LoadManager;
+import com.yahoo.pulsar.broker.loadbalance.LoadManagerFactory;
 import com.yahoo.pulsar.broker.loadbalance.LoadReportUpdaterTask;
 import com.yahoo.pulsar.broker.loadbalance.LoadResourceQuotaUpdaterTask;
 import com.yahoo.pulsar.broker.loadbalance.LoadSheddingTask;
@@ -82,10 +85,13 @@ public class PulsarService implements AutoCloseable {
     private WebService webService = null;
     private WebSocketService webSocketService = null;
     private ConfigurationCacheService configurationCacheService = null;
+    private LocalZooKeeperCacheService dataZkCacheService = null;
+    private ZooKeeperCache dataZkCache;
+    private LocalZooKeeperConnectionService dataZooKeeperConnectionProvider;
     private LocalZooKeeperCacheService localZkCacheService = null;
     private ZooKeeperCache localZkCache;
-    private GlobalZooKeeperCache globalZkCache;
     private LocalZooKeeperConnectionService localZooKeeperConnectionProvider;
+    private GlobalZooKeeperCache globalZkCache;
     private final ScheduledExecutorService executor = Executors.newScheduledThreadPool(20,
             new DefaultThreadFactory("pulsar"));
     private final OrderedSafeExecutor orderedExecutor = new OrderedSafeExecutor(8, "pulsar-ordered");
@@ -171,12 +177,17 @@ public class PulsarService implements AutoCloseable {
                 globalZkCache.close();
                 globalZkCache = null;
                 localZooKeeperConnectionProvider.close();
+                dataZooKeeperConnectionProvider.close();
                 localZooKeeperConnectionProvider = null;
+                dataZooKeeperConnectionProvider = null;
             }
 
             configurationCacheService = null;
+            
             localZkCacheService = null;
             localZkCache = null;
+            dataZkCacheService = null;
+            dataZkCache = null;
 
             if (adminClient != null) {
                 adminClient.close();
@@ -222,20 +233,34 @@ public class PulsarService implements AutoCloseable {
             }
 
             // Now we are ready to start services
-            localZooKeeperConnectionProvider = new LocalZooKeeperConnectionService(getZooKeeperClientFactory(),
+            localZooKeeperConnectionProvider = new LocalZooKeeperConnectionService(getLocalZooKeeperClientFactory(),
                     config.getZookeeperServers(), config.getZooKeeperSessionTimeoutMillis());
             localZooKeeperConnectionProvider.start(shutdownService);
-
+            
+            if (equalsDataAndLocalZk()) {
+                dataZooKeeperConnectionProvider = localZooKeeperConnectionProvider;
+            } else {
+                dataZooKeeperConnectionProvider = new LocalZooKeeperConnectionService(getZooKeeperClientFactory(),
+                        config.getDataZookeeperServers(), config.getDataZooKeeperSessionTimeoutMillis());
+                dataZooKeeperConnectionProvider.start(shutdownService);
+            }
+            
             // Initialize and start service to access configuration repository.
             this.startZkCacheService();
 
-            managedLedgerClientFactory = new ManagedLedgerClientFactory(config, getZkClient(),
+            managedLedgerClientFactory = new ManagedLedgerClientFactory(config, getDataZkClient(),
                     getBookKeeperClientFactory());
 
             this.brokerService = new BrokerService(this);
 
             // Start load management service (even if load balancing is disabled)
-            this.loadManager = new SimpleLoadManagerImpl(this);
+            
+            if (isNotBlank(getConfiguration().getLoadBalancerFactoryProvider())) {
+                this.loadManager = ((LoadManagerFactory) Class.forName(getConfiguration().getLoadBalancerFactoryProvider())
+                        .newInstance()).create(this);
+            } else {
+                this.loadManager = new SimpleLoadManagerImpl(this);
+            }
 
             this.startLoadManagementService();
 
@@ -369,7 +394,8 @@ public class PulsarService implements AutoCloseable {
 
         LOG.info("starting configuration cache service");
 
-        this.localZkCache = new LocalZooKeeperCache(getZkClient(), getOrderedExecutor());
+        this.localZkCache = new LocalZooKeeperCache(getLocalZkClient(), getOrderedExecutor());
+        this.dataZkCache = equalsDataAndLocalZk() ? localZkCache : new LocalZooKeeperCache(getDataZkClient(), getOrderedExecutor());
         this.globalZkCache = new GlobalZooKeeperCache(getZooKeeperClientFactory(),
                 (int) config.getZooKeeperSessionTimeoutMillis(), config.getGlobalZookeeperServers(),
                 getOrderedExecutor(), this.executor);
@@ -381,6 +407,8 @@ public class PulsarService implements AutoCloseable {
 
         this.configurationCacheService = new ConfigurationCacheService(getGlobalZkCache());
         this.localZkCacheService = new LocalZooKeeperCacheService(getLocalZkCache(), this.configurationCacheService);
+        this.dataZkCacheService = equalsDataAndLocalZk() ? localZkCacheService
+                : new LocalZooKeeperCacheService(getDataZkCache(), this.configurationCacheService);
     }
 
     private void startNamespaceService() throws PulsarServerException {
@@ -460,12 +488,20 @@ public class PulsarService implements AutoCloseable {
         return config.getStatusFilePath();
     }
 
-    public ZooKeeper getZkClient() {
+    public ZooKeeper getDataZkClient() {
+        return this.dataZooKeeperConnectionProvider.getLocalZooKeeper();
+    }
+    
+    public ZooKeeper getLocalZkClient() {
         return this.localZooKeeperConnectionProvider.getLocalZooKeeper();
     }
 
     public ConfigurationCacheService getConfigurationCache() {
         return configurationCacheService;
+    }
+    
+    public boolean equalsDataAndLocalZk() {
+        return config.getZookeeperServers().equals(config.getDataZookeeperServers());
     }
 
     /**
@@ -508,6 +544,10 @@ public class PulsarService implements AutoCloseable {
         return managedLedgerClientFactory.getManagedLedgerFactory();
     }
 
+    public ZooKeeperCache getDataZkCache() {
+        return dataZkCache;
+    }
+
     public ZooKeeperCache getLocalZkCache() {
         return localZkCache;
     }
@@ -528,8 +568,18 @@ public class PulsarService implements AutoCloseable {
         return orderedExecutor;
     }
 
+    public LocalZooKeeperCacheService getDataZkCacheService() {
+        return this.dataZkCacheService;
+    }
+
     public LocalZooKeeperCacheService getLocalZkCacheService() {
         return this.localZkCacheService;
+    }
+
+    // this is created to allow unit-test to mock it 
+    @VisibleForTesting
+    public ZooKeeperClientFactory getLocalZooKeeperClientFactory() {
+        return getZooKeeperClientFactory();
     }
 
     public ZooKeeperClientFactory getZooKeeperClientFactory() {

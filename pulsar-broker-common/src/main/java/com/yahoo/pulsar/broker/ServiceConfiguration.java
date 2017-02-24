@@ -36,6 +36,9 @@ public class ServiceConfiguration implements PulsarConfiguration{
     // Zookeeper quorum connection string
     @FieldContext(required = true)
     private String zookeeperServers;
+    // Data Zookeeper quorum connection string
+    @FieldContext(required = false)
+    private String dataZookeeperServers;
     // Global Zookeeper quorum connection string
     @FieldContext(required = false)
     private String globalZookeeperServers;
@@ -60,6 +63,8 @@ public class ServiceConfiguration implements PulsarConfiguration{
     private String clusterName;
     // Zookeeper session timeout in milliseconds
     private long zooKeeperSessionTimeoutMillis = 30000;
+    // Data Zookeeper session timeout in milliseconds
+    private long dataZooKeeperSessionTimeoutMillis = 60000;
     // Time to wait for broker graceful shutdown. After this time elapses, the
     // process will be killed
     private long brokerShutdownTimeoutMs = 3000;
@@ -203,7 +208,7 @@ public class ServiceConfiguration implements PulsarConfiguration{
     private int loadBalancerBrokerOverloadedThresholdPercentage = 85;
     // interval to flush dynamic resource quota to ZooKeeper
     private int loadBalancerResourceQuotaUpdateIntervalMinutes = 15;
-    // Usage threshold to defermine a broker is having just right level of load
+    // Usage threshold to determine a broker is having just right level of load
     private int loadBalancerBrokerComfortLoadLevelPercentage = 65;
     // enable/disable automatic namespace bundle split
     private boolean loadBalancerAutoBundleSplitEnabled = false;
@@ -217,6 +222,13 @@ public class ServiceConfiguration implements PulsarConfiguration{
     private int loadBalancerNamespaceBundleMaxBandwidthMbytes = 100;
     // maximum number of bundles in a namespace
     private int loadBalancerNamespaceMaximumBundles = 128;
+
+    @FieldContext(required = false)
+    // OwnershipCacheFactory-provider class name if requires to inject non-default namespace-bundle ownership implementation
+    private String namespaceOwnershipCacheFactoryProvider;
+    @FieldContext(required = false)
+    // LoadBalancerFactory-provider class name if requires to inject non-default LoadBalancer implementation
+    private String loadBalancerFactoryProvider;
 
     /**** --- Replication --- ****/
     // Enable replication metrics
@@ -247,6 +259,19 @@ public class ServiceConfiguration implements PulsarConfiguration{
 
     public void setZookeeperServers(String zookeeperServers) {
         this.zookeeperServers = zookeeperServers;
+    }
+
+    public String getDataZookeeperServers() {
+        if (this.dataZookeeperServers == null || this.dataZookeeperServers.isEmpty()) {
+            // If the configuration is not set, assuming that the dataZK is not enabled and all data is in the same
+            // ZooKeeper cluster
+            return this.getZookeeperServers();
+        }
+        return dataZookeeperServers;
+    }
+
+    public void setDataZookeeperServers(String dataZookeeperServers) {
+        this.dataZookeeperServers = dataZookeeperServers;
     }
 
     public String getGlobalZookeeperServers() {
@@ -818,6 +843,21 @@ public class ServiceConfiguration implements PulsarConfiguration{
         return this.loadBalancerNamespaceMaximumBundles;
     }
 
+    public String getNamespaceOwnershipCacheFactoryProvider() {
+        return namespaceOwnershipCacheFactoryProvider;
+    }
+
+    public void setNamespaceOwnershipCacheFactoryProvider(String namespaceOwnershipCacheFactoryProvider) {
+        this.namespaceOwnershipCacheFactoryProvider = namespaceOwnershipCacheFactoryProvider;
+    }
+    public String getLoadBalancerFactoryProvider() {
+        return loadBalancerFactoryProvider;
+    }
+
+    public void setLoadBalancerFactoryProvider(String loadBalancerFactoryProvider) {
+        this.loadBalancerFactoryProvider = loadBalancerFactoryProvider;
+    }
+    
     public boolean isReplicationMetricsEnabled() {
         return replicationMetricsEnabled;
     }
@@ -904,6 +944,14 @@ public class ServiceConfiguration implements PulsarConfiguration{
 
     public void setZooKeeperSessionTimeoutMillis(long zooKeeperSessionTimeoutMillis) {
         this.zooKeeperSessionTimeoutMillis = zooKeeperSessionTimeoutMillis;
+    }
+
+    public long getDataZooKeeperSessionTimeoutMillis() {
+        return dataZooKeeperSessionTimeoutMillis;
+    }
+
+    public void setDataZooKeeperSessionTimeoutMillis(long dataZooKeeperSessionTimeoutMillis) {
+        this.dataZooKeeperSessionTimeoutMillis = dataZooKeeperSessionTimeoutMillis;
     }
 
     public String getReplicatorPrefix() {
