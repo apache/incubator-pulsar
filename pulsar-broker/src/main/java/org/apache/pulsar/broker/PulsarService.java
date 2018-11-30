@@ -95,6 +95,7 @@ import org.apache.pulsar.compaction.TwoPhaseCompactor;
 import org.apache.pulsar.functions.worker.Utils;
 import org.apache.pulsar.functions.worker.WorkerConfig;
 import org.apache.pulsar.functions.worker.WorkerService;
+import org.apache.pulsar.grpc.GrpcProxyService;
 import org.apache.pulsar.utils.PulsarBrokerVersionStringUtils;
 import org.apache.pulsar.websocket.WebSocketConsumerServlet;
 import org.apache.pulsar.websocket.WebSocketProducerServlet;
@@ -128,6 +129,7 @@ public class PulsarService implements AutoCloseable {
     private BrokerService brokerService = null;
     private WebService webService = null;
     private WebSocketService webSocketService = null;
+    private GrpcProxyService grpcProxyService = null;
     private ConfigurationCacheService configurationCacheService = null;
     private LocalZooKeeperCacheService localZkCacheService = null;
     private BookKeeperClientFactory bkClientFactory;
@@ -454,6 +456,13 @@ public class PulsarService implements AutoCloseable {
             schemaRegistryService = SchemaRegistryService.create(this);
 
             webService.start();
+
+            if(config.isGrpcServiceEnabled()) {
+                this.grpcProxyService = new GrpcProxyService(
+                        new ClusterData(webServiceAddress, webServiceAddressTls, brokerServiceUrl, brokerServiceUrlTls),
+                        config);
+                this.grpcProxyService.start();
+            }
 
             this.metricsGenerator = new MetricsGenerator(this);
 
