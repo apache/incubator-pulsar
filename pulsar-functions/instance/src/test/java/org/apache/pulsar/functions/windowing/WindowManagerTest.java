@@ -54,7 +54,6 @@ public class WindowManagerTest {
     private Listener listener;
 
     private static final long TIMESTAMP = 1516776194873L;
-    private static final String TOPIC = "test-topic";
 
     private static class Listener implements WindowLifecycleListener<Event<Integer>> {
         private List<Event<Integer>> onExpiryEvents = Collections.emptyList();
@@ -156,7 +155,7 @@ public class WindowManagerTest {
         CountEvictionPolicy<Integer> countEvictionPolicy = new CountEvictionPolicy<Integer>(5);
         windowManager.setEvictionPolicy(countEvictionPolicy);
         TriggerPolicy<Integer, ?> triggerPolicy = new TimeTriggerPolicy<Integer>(Duration.ofHours(1)
-                .toMillis(), windowManager, countEvictionPolicy, null);
+                .toMillis(), windowManager, countEvictionPolicy, null, null, null);
         triggerPolicy.start();
         windowManager.setTriggerPolicy(triggerPolicy);
         for (Event<Integer> i : seq(1, 5)) {
@@ -237,7 +236,7 @@ public class WindowManagerTest {
          * Set it to a large value and trigger manually.
           */
         TriggerPolicy<Integer, ?> triggerPolicy = new TimeTriggerPolicy<Integer>(Duration.ofDays(1)
-                .toMillis(), windowManager, evictionPolicy, null);
+                .toMillis(), windowManager, evictionPolicy, null, null, null);
         triggerPolicy.start();
         windowManager.setTriggerPolicy(triggerPolicy);
         long now = System.currentTimeMillis();
@@ -305,7 +304,7 @@ public class WindowManagerTest {
          * Set it to a large value and trigger manually.
           */
         TriggerPolicy<Integer, ?> triggerPolicy = new TimeTriggerPolicy<Integer>(Duration.ofDays(1)
-                .toMillis(), windowManager, evictionPolicy, null);
+                .toMillis(), windowManager, evictionPolicy, null, null, null);
         triggerPolicy.start();
         windowManager.setTriggerPolicy(triggerPolicy);
         long now = TIMESTAMP;
