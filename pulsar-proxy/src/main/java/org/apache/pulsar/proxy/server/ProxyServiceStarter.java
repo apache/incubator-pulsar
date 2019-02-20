@@ -55,10 +55,6 @@ public class ProxyServiceStarter {
     @Parameter(names = { "-zk", "--zookeeper-servers" }, description = "Local zookeeper connection string")
     private String zookeeperServers = "";
 
-    @Deprecated
-    @Parameter(names = { "-gzk", "--global-zookeeper-servers" }, description = "Global zookeeper connection string")
-    private String globalZookeeperServers = "";
-
     @Parameter(names = { "-cs", "--configuration-store-servers" },
         description = "Configuration store connection string")
     private String configurationStoreServers = "";
@@ -97,10 +93,6 @@ public class ProxyServiceStarter {
             config.setZookeeperServers(zookeeperServers);
         }
 
-        if (!isBlank(globalZookeeperServers)) {
-            // Use globalZookeeperServers from command line
-            config.setConfigurationStoreServers(globalZookeeperServers);
-        }
         if (!isBlank(configurationStoreServers)) {
             // Use configurationStoreServers from command line
             config.setConfigurationStoreServers(configurationStoreServers);

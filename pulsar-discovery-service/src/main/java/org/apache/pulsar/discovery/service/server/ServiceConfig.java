@@ -36,9 +36,6 @@ public class ServiceConfig implements PulsarConfiguration {
 
     // Local-Zookeeper quorum connection string
     private String zookeeperServers;
-    // Global-Zookeeper quorum connection string
-    @Deprecated
-    private String globalZookeeperServers;
     // Configuration Store connection string
     private String configurationStoreServers;
 
@@ -108,18 +105,8 @@ public class ServiceConfig implements PulsarConfiguration {
         this.zookeeperServers = zookeeperServers;
     }
 
-    @Deprecated
-    public String getGlobalZookeeperServers() {
-        return globalZookeeperServers;
-    }
-
-    @Deprecated
-    public void setGlobalZookeeperServers(String globalZookeeperServers) {
-        this.globalZookeeperServers = globalZookeeperServers;
-    }
-
     public String getConfigurationStoreServers() {
-        return null == configurationStoreServers ? getGlobalZookeeperServers() : configurationStoreServers;
+        return configurationStoreServers;
     }
 
     public void setConfigurationStoreServers(String configurationStoreServers) {
