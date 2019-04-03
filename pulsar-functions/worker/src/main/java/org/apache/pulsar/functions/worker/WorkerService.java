@@ -41,11 +41,11 @@ import org.apache.distributedlog.DistributedLogConfiguration;
 import org.apache.distributedlog.api.namespace.Namespace;
 import org.apache.distributedlog.api.namespace.NamespaceBuilder;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.ClientBuilder;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 
 /**
  * A service component contains everything to run a worker except rest server.
@@ -69,6 +69,7 @@ public class WorkerService {
     private boolean isInitialized = false;
     private final ScheduledExecutorService statsUpdater;
     private AuthenticationService authenticationService;
+    private AuthorizationService authorizationService;
     private ConnectorsManager connectorsManager;
     private PulsarAdmin brokerAdmin;
     private PulsarAdmin functionAdmin;
@@ -85,17 +86,20 @@ public class WorkerService {
         this.metricsGenerator = new MetricsGenerator(this.statsUpdater, workerConfig);
     }
 
-    public void start(URI dlogUri) throws InterruptedException {
+
+    public void start(URI dlogUri,
+                      AuthenticationService authenticationService,
+                      AuthorizationService authorizationService) throws InterruptedException {
         log.info("Starting worker {}...", workerConfig.getWorkerId());
 
-        this.brokerAdmin = Utils.getPulsarAdminClient(workerConfig.getPulsarWebServiceUrl(),
+        this.brokerAdmin = WorkerUtils.getPulsarAdminClient(workerConfig.getPulsarWebServiceUrl(),
                 workerConfig.getClientAuthenticationPlugin(), workerConfig.getClientAuthenticationParameters(),
                 workerConfig.getTlsTrustCertsFilePath(), workerConfig.isTlsAllowInsecureConnection());
         
         final String functionWebServiceUrl = StringUtils.isNotBlank(workerConfig.getFunctionWebServiceUrl())
                 ? workerConfig.getFunctionWebServiceUrl()
                 : workerConfig.getWorkerWebAddress(); 
-        this.functionAdmin = Utils.getPulsarAdminClient(functionWebServiceUrl,
+        this.functionAdmin = WorkerUtils.getPulsarAdminClient(functionWebServiceUrl,
                 workerConfig.getClientAuthenticationPlugin(), workerConfig.getClientAuthenticationParameters(),
                 workerConfig.getTlsTrustCertsFilePath(), workerConfig.isTlsAllowInsecureConnection());
 
@@ -108,7 +112,7 @@ public class WorkerService {
 
         // create the dlog namespace for storing function packages
         this.dlogUri = dlogUri;
-        DistributedLogConfiguration dlogConf = Utils.getDlogConf(workerConfig);
+        DistributedLogConfiguration dlogConf = WorkerUtils.getDlogConf(workerConfig);
         try {
             this.dlogNamespace = NamespaceBuilder.newBuilder()
                     .conf(dlogConf)
@@ -175,7 +179,9 @@ public class WorkerService {
             // initialize function runtime manager
             this.functionRuntimeManager.initialize();
 
-            authenticationService = new AuthenticationService(PulsarConfigurationLoader.convertFrom(workerConfig));
+            this.authenticationService = authenticationService;
+
+            this.authorizationService = authorizationService;
 
             // Starting cluster services
             log.info("Start cluster services...");
