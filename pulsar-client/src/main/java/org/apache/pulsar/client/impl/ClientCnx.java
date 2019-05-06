@@ -20,6 +20,7 @@ package org.apache.pulsar.client.impl;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static org.apache.pulsar.client.impl.BinaryProtoLookupService.BatchLookupDataResult;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Queues;
@@ -39,6 +40,7 @@ import java.nio.channels.ClosedChannelException;
 import java.util.List;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledFuture;
@@ -48,6 +50,7 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 import javax.net.ssl.SSLSession;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.http.conn.ssl.DefaultHostnameVerifier;
 import org.apache.pulsar.PulsarVersion;
@@ -70,6 +73,7 @@ import org.apache.pulsar.common.api.proto.PulsarApi.CommandGetLastMessageIdRespo
 import org.apache.pulsar.common.api.proto.PulsarApi.CommandGetSchemaResponse;
 import org.apache.pulsar.common.api.proto.PulsarApi.CommandGetTopicsOfNamespaceResponse;
 import org.apache.pulsar.common.api.proto.PulsarApi.CommandLookupTopicResponse;
+import org.apache.pulsar.common.api.proto.PulsarApi.CommandBatchLookupTopicResponse;
 import org.apache.pulsar.common.api.proto.PulsarApi.CommandMessage;
 import org.apache.pulsar.common.api.proto.PulsarApi.CommandPartitionedTopicMetadataResponse;
 import org.apache.pulsar.common.api.proto.PulsarApi.CommandProducerSuccess;
@@ -96,6 +100,10 @@ public class ClientCnx extends PulsarHandler {
         new ConcurrentLongHashMap<>(16, 1);
     // LookupRequests that waiting in client side.
     private final Queue<Pair<Long, Pair<ByteBuf, CompletableFuture<LookupDataResult>>>> waitingLookupRequests;
+    private final ConcurrentLongHashMap<CompletableFuture<BatchLookupDataResult>> pendingBatchLookupRequests =
+            new ConcurrentLongHashMap<>(16, 1);
+    // LookupRequests that waiting in client side.
+    private final BlockingQueue<Pair<Long, Pair<ByteBuf, CompletableFuture<BatchLookupDataResult>>>> waitingBatchLookupRequests;
     private final ConcurrentLongHashMap<CompletableFuture<MessageIdData>> pendingGetLastMessageIdRequests =
         new ConcurrentLongHashMap<>(16, 1);
     private final ConcurrentLongHashMap<CompletableFuture<List<String>>> pendingGetTopicsRequests =
@@ -109,8 +117,8 @@ public class ClientCnx extends PulsarHandler {
 
     private final CompletableFuture<Void> connectionFuture = new CompletableFuture<Void>();
     private final ConcurrentLinkedQueue<RequestTime> requestTimeoutQueue = new ConcurrentLinkedQueue<>();
-    private final Semaphore pendingLookupRequestSemaphore;
     private final Semaphore maxLookupRequestSemaphore;
+    private final Semaphore pendingBatchLookupRequestSemaphore;
     private final EventLoopGroup eventLoopGroup;
 
     private static final AtomicIntegerFieldUpdater<ClientCnx> NUMBER_OF_REJECTED_REQUESTS_UPDATER = AtomicIntegerFieldUpdater
@@ -155,9 +163,11 @@ public class ClientCnx extends PulsarHandler {
     public ClientCnx(ClientConfigurationData conf, EventLoopGroup eventLoopGroup, int protocolVersion) {
         super(conf.getKeepAliveIntervalSeconds(), TimeUnit.SECONDS);
         checkArgument(conf.getMaxLookupRequest() > conf.getConcurrentLookupRequest());
-        this.pendingLookupRequestSemaphore = new Semaphore(conf.getConcurrentLookupRequest(), false);
         this.maxLookupRequestSemaphore = new Semaphore(conf.getMaxLookupRequest() - conf.getConcurrentLookupRequest(), false);
         this.waitingLookupRequests = Queues.newConcurrentLinkedQueue();
+        this.pendingBatchLookupRequestSemaphore = new Semaphore(conf.getConcurrentLookupRequest(), true);
+        this.waitingBatchLookupRequests = Queues
+            .newArrayBlockingQueue((conf.getMaxLookupRequest() - conf.getConcurrentLookupRequest()));
         this.authentication = conf.getAuthentication();
         this.eventLoopGroup = eventLoopGroup;
         this.maxNumberOfRejectedRequestPerConnection = conf.getMaxNumberOfRejectedRequestPerConnection();
@@ -458,6 +468,41 @@ public class ClientCnx extends PulsarHandler {
     }
 
     @Override
+    protected void handleBatchLookupResponse(CommandBatchLookupTopicResponse batchLookupResult) {
+        if (log.isDebugEnabled()) {
+            log.debug("Received batch Broker lookup response: {}", StringUtils.join(batchLookupResult.getLookupResponsesList(), "\n"));
+        }
+
+        long requestId = batchLookupResult.getRequestId();
+        CompletableFuture<BatchLookupDataResult> pendingBatchLookupFuture = getAndRemovePendingBatchLookupRequest(requestId);
+
+        if (null != pendingBatchLookupFuture) {
+            if (pendingBatchLookupFuture.isCompletedExceptionally()) {
+                if (log.isDebugEnabled()) {
+                    log.debug("{} Batch lookup request {} already timed-out", ctx.channel(), requestId);
+                }
+                return;
+            }
+
+            if (!batchLookupResult.hasResponse()
+                    || CommandBatchLookupTopicResponse.ResponseType.Failed.equals(batchLookupResult.getResponse())) {
+                if (batchLookupResult.hasError()) {
+                    checkServerError(batchLookupResult.getError(), batchLookupResult.getMessage());
+                    pendingBatchLookupFuture.completeExceptionally(
+                            getPulsarClientException(batchLookupResult.getError(), batchLookupResult.getMessage()));
+                } else {
+                    pendingBatchLookupFuture
+                            .completeExceptionally(new PulsarClientException.LookupException("Empty lookup response"));
+                }
+            } else {
+                pendingBatchLookupFuture.complete(new BatchLookupDataResult(batchLookupResult));
+            }
+        } else {
+            log.warn("{} Received unknown batch lookup request id from server: {}", ctx.channel(), requestId);
+        }
+    }
+
+    @Override
     protected void handlePartitionResponse(CommandPartitionedTopicMetadataResponse lookupResult) {
         if (log.isDebugEnabled()) {
             log.debug("Received Broker Partition response: {}", lookupResult.getPartitions());
@@ -516,6 +561,17 @@ public class ClientCnx extends PulsarHandler {
         }, operationTimeoutMs, TimeUnit.MILLISECONDS);
     }
 
+    private void addPendingBatchLookupRequests(long requestId, CompletableFuture<BatchLookupDataResult> future) {
+        pendingBatchLookupRequests.put(requestId, future);
+        eventLoopGroup.schedule(() -> {
+            if (!future.isDone()) {
+                String errorMessage = "Batch lookup request:" + requestId + " timedout after " + operationTimeoutMs + "ms";
+                log.warn(errorMessage);
+                future.completeExceptionally(new TimeoutException(errorMessage));
+            }
+        }, operationTimeoutMs, TimeUnit.MILLISECONDS);
+    }
+
     private CompletableFuture<LookupDataResult> getAndRemovePendingLookupRequest(long requestId) {
         CompletableFuture<LookupDataResult> result = pendingLookupRequests.remove(requestId);
         if (result != null) {
@@ -541,6 +597,33 @@ public class ClientCnx extends PulsarHandler {
             }
         }
         return result;
+    }
+
+    private CompletableFuture<BatchLookupDataResult> getAndRemovePendingBatchLookupRequest(long requestId) {
+        CompletableFuture<BatchLookupDataResult> future = pendingBatchLookupRequests.remove(requestId);
+        if (null != future) {
+            Pair<Long, Pair<ByteBuf, CompletableFuture<BatchLookupDataResult>>> firstWaitingRequest =
+                                                                                    waitingBatchLookupRequests.poll();
+            if (null != firstWaitingRequest) {
+                eventLoopGroup.submit(() -> {
+                    long waitingRequestId = firstWaitingRequest.getLeft();
+                    Pair<ByteBuf, CompletableFuture<BatchLookupDataResult>> payLoadAndRequestPair = firstWaitingRequest.getRight();
+                    CompletableFuture<BatchLookupDataResult> firstWaitingRequestFuture = payLoadAndRequestPair.getRight();
+                    pendingBatchLookupRequests.put(waitingRequestId, firstWaitingRequestFuture);
+                    ctx.writeAndFlush(payLoadAndRequestPair.getLeft()).addListener(writeFuture -> {
+                        if (!writeFuture.isSuccess()) {
+                            log.warn("{} Failed to send batch lookup request with id: {} to broker: {}", ctx.channel(),
+                                    waitingRequestId, writeFuture.cause().getMessage());
+                            getAndRemovePendingBatchLookupRequest(waitingRequestId);
+                            firstWaitingRequestFuture.completeExceptionally(writeFuture.cause());
+                        }
+                    });
+                });
+            } else {
+                pendingLookupRequestSemaphore.release();
+            }
+        }
+        return future;
     }
 
     @Override
@@ -644,6 +727,38 @@ public class ClientCnx extends PulsarHandler {
                     waitingLookupRequests.size())));
             }
         }
+        return future;
+    }
+
+    public CompletableFuture<BatchLookupDataResult> newBatchLookup(ByteBuf requestPayload, long requestId) {
+        CompletableFuture<BatchLookupDataResult> future = new CompletableFuture<>();
+
+        if (pendingLookupRequestSemaphore.tryAcquire()) {
+            addPendingBatchLookupRequests(requestId, future);
+            ctx.writeAndFlush(requestPayload).addListener(writeFuture -> {
+               if (!writeFuture.isSuccess()) {
+                   log.warn("{} Failed to send batch lookup request with id: {} to broker: {}", ctx.channel(),
+                           requestId, writeFuture.cause().getMessage());
+                   getAndRemovePendingBatchLookupRequest(requestId);
+                   future.completeExceptionally(writeFuture.cause());
+               }
+            });
+        } else {
+            if (log.isDebugEnabled()) {
+                log.debug("Failed to add batch lookup request:{} into pending queue", requestId);
+            }
+
+            if (!waitingBatchLookupRequests.offer(Pair.of(requestId, Pair.of(requestPayload, future)))) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Failed to add batch lookup request:{} into waiting queue", requestId);
+                }
+                future.completeExceptionally(new PulsarClientException.TooManyRequestsException(String.format(
+                        "Requests number out of config: There are {%s} lookup requests outstanding and {%s} requests pending.",
+                        pendingLookupRequests.size(),
+                        waitingLookupRequests.size())));
+            }
+        }
+
         return future;
     }
 
