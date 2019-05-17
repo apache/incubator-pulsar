@@ -55,8 +55,16 @@ import org.apache.pulsar.tests.integration.docker.ContainerExecException;
 import org.apache.pulsar.tests.integration.docker.ContainerExecResult;
 import org.apache.pulsar.tests.integration.functions.utils.CommandGenerator;
 import org.apache.pulsar.tests.integration.functions.utils.CommandGenerator.Runtime;
-import org.apache.pulsar.tests.integration.io.*;
-import org.apache.pulsar.tests.integration.io.JdbcSinkTester.Foo;
+import org.apache.pulsar.tests.integration.io.CassandraSinkTester;
+import org.apache.pulsar.tests.integration.io.DebeziumMySqlSourceTester;
+import org.apache.pulsar.tests.integration.io.ElasticSearchSinkTester;
+import org.apache.pulsar.tests.integration.io.HbaseSinkTester;
+import org.apache.pulsar.tests.integration.io.HdfsSinkTester;
+import org.apache.pulsar.tests.integration.io.JdbcSinkTester;
+import org.apache.pulsar.tests.integration.io.KafkaSinkTester;
+import org.apache.pulsar.tests.integration.io.KafkaSourceTester;
+import org.apache.pulsar.tests.integration.io.SinkTester;
+import org.apache.pulsar.tests.integration.io.SourceTester;
 import org.apache.pulsar.tests.integration.topologies.FunctionRuntimeType;
 import org.apache.pulsar.tests.integration.topologies.PulsarCluster;
 import org.testcontainers.containers.GenericContainer;
@@ -90,12 +98,18 @@ public abstract class PulsarFunctionsTest extends PulsarFunctionsTestBase {
 
     @Test(enabled = false)
     public void testHdfsSink() throws Exception {
-        testSink(new HdfsSinkTester(), false);
+        testSink(new HdfsSinkTester(), true);
     }
 
     @Test
     public void testJdbcSink() throws Exception {
         testSink(new JdbcSinkTester(), true);
+    }
+
+    @Test
+    public void testHbaseSink() throws Exception {
+        HbaseSinkTester sinkTester = new HbaseSinkTester();
+        testSink(sinkTester, true);
     }
 
     @Test(enabled = false)
@@ -162,7 +176,9 @@ public abstract class PulsarFunctionsTest extends PulsarFunctionsTestBase {
         // produce messages
         Map<String, String> kvs;
         if (tester instanceof JdbcSinkTester) {
-            kvs = produceSchemaMessagesToInputTopic(inputTopicName, numMessages, AvroSchema.of(JdbcSinkTester.Foo.class));
+            kvs = produceSchemaMessagesToInputTopicForJdbcSink(inputTopicName, numMessages, AvroSchema.of(JdbcSinkTester.Foo.class));
+        } if (tester instanceof HbaseSinkTester) {
+            kvs = produceSchemaMessagesToInputTopicForHbaseSink(inputTopicName, AvroSchema.of(HbaseSinkTester.Foo.class));
         } else {
             kvs = produceMessagesToInputTopic(inputTopicName, numMessages);
         }
@@ -352,17 +368,17 @@ public abstract class PulsarFunctionsTest extends PulsarFunctionsTestBase {
     }
 
     // This for JdbcSinkTester
-    protected Map<String, String> produceSchemaMessagesToInputTopic(String inputTopicName,
-                                                                    int numMessages,
-                                                                    Schema<Foo> schema) throws Exception {
+    protected Map<String, String> produceSchemaMessagesToInputTopicForJdbcSink(String inputTopicName,
+                                                                               int numMessages,
+                                                                               Schema<JdbcSinkTester.Foo> schema) throws Exception {
         @Cleanup
         PulsarClient client = PulsarClient.builder()
             .serviceUrl(pulsarCluster.getPlainTextServiceUrl())
             .build();
         @Cleanup
-        Producer<Foo> producer = client.newProducer(schema)
-            .topic(inputTopicName)
-            .create();
+        Producer<JdbcSinkTester.Foo> producer = client.newProducer(schema)
+              .topic(inputTopicName)
+              .create();
         LinkedHashMap<String, String> kvs = new LinkedHashMap<>();
         for (int i = 0; i < numMessages; i++) {
             String key = "key-" + i;
@@ -379,6 +395,38 @@ public abstract class PulsarFunctionsTest extends PulsarFunctionsTestBase {
                 .value(obj)
                 .send();
         }
+        return kvs;
+    }
+
+    // This for HbaseSinkTester
+    protected Map<String, String> produceSchemaMessagesToInputTopicForHbaseSink(String inputTopicName,
+                                                                                Schema<HbaseSinkTester.Foo> schema) throws Exception {
+        @Cleanup
+        PulsarClient client = PulsarClient.builder()
+              .serviceUrl(pulsarCluster.getPlainTextServiceUrl())
+              .build();
+        @Cleanup
+        Producer<HbaseSinkTester.Foo> producer = client.newProducer(schema)
+              .topic(inputTopicName)
+              .create();
+        LinkedHashMap<String, String> kvs = new LinkedHashMap<>();
+
+
+        String key = "row_key";
+        HbaseSinkTester.Foo obj = new HbaseSinkTester.Foo();
+        obj.setRowKey("rowKey_value");
+        obj.setName("name_value");
+        obj.setAddress("address_value");
+        obj.setAge(30);
+        obj.setFlag(true);
+        String value = new String(schema.encode(obj));
+
+        kvs.put(key, value);
+        producer.newMessage()
+              .key(key)
+              .value(obj)
+              .send();
+
         return kvs;
     }
 
