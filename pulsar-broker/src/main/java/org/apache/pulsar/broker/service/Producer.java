@@ -45,6 +45,7 @@ import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.api.Commands;
 import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
 import org.apache.pulsar.common.api.proto.PulsarApi.ServerError;
+import org.apache.pulsar.common.naming.Constants;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.NonPersistentPublisherStats;
 import org.apache.pulsar.common.policies.data.PublisherStats;
@@ -151,12 +152,17 @@ public class Producer {
             return;
         }
 
-        if (topic.isEncryptionRequired()) {
+        headersAndPayload.markReaderIndex();
+        MessageMetadata msgMetadata = Commands.parseMessageMetadata(headersAndPayload);
+        headersAndPayload.resetReaderIndex();
 
+        if (msgMetadata.getPublishTime() == Constants.PUBLISH_TIME_UNSET_MS) {
             headersAndPayload.markReaderIndex();
-            MessageMetadata msgMetadata = Commands.parseMessageMetadata(headersAndPayload);
+            Commands.modifyMessageMetadata(headersAndPayload, newPublishOnMetadata(msgMetadata));
             headersAndPayload.resetReaderIndex();
+        }
 
+        if (topic.isEncryptionRequired()) {
             // Check whether the message is encrypted or not
             if (msgMetadata.getEncryptionKeysCount() < 1) {
                 log.warn("[{}] Messages must be encrypted", getTopic().getName());
@@ -173,6 +179,10 @@ public class Producer {
         topic.publishMessage(headersAndPayload,
                 MessagePublishContext.get(this, sequenceId, msgIn, headersAndPayload.readableBytes(), batchSize,
                         System.nanoTime()));
+    }
+
+    private static MessageMetadata newPublishOnMetadata(MessageMetadata msgMetadata) {
+        return msgMetadata.toBuilder().setPublishTime(System.currentTimeMillis()).build();
     }
 
     private boolean verifyChecksum(ByteBuf headersAndPayload) {
