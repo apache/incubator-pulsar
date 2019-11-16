@@ -56,6 +56,8 @@ spec:
             labels:
                 app: pulsar
                 component: zookeeper
+                # Specify cluster to allow aggregation by cluster in
+                # the metrics
                 cluster: us-east
             annotations:
                 pod.alpha.kubernetes.io/initialized: "true"
@@ -92,6 +94,8 @@ spec:
                     bin/generate-zookeeper-config.sh conf/zookeeper.conf &&
                     bin/pulsar zookeeper
                 ports:
+                  - containerPort: 8000
+                    name: metrics
                   - containerPort: 2181
                     name: client
                   - containerPort: 2888
@@ -145,6 +149,8 @@ metadata:
         component: zookeeper
 spec:
     ports:
+      - port: 8000
+        name: metrics
       - port: 2888
         name: server
       - port: 3888

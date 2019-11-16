@@ -17,15 +17,26 @@
 # under the License.
 #
 
-FROM grafana/grafana:5.4.3
-
-COPY grafana.ini /etc/grafana/grafana.ini
-COPY dashboards/* /var/lib/grafana/dashboards/
-COPY default.yaml /etc/grafana/provisioning/dashboards/
-COPY start.sh /start.sh
-
-EXPOSE 3000
-
-ENV PROMETHEUS_URL http://prometheus:9090
-
-ENTRYPOINT ["/start.sh"]
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pulsar-cluster-metadata-init
+  labels:
+    app: pulsar
+    component: broker
+spec:
+  template:
+    spec:
+      containers:
+        - name: pulsar-cluster-metadata-init-container
+          image: apachepulsar/pulsar:latest
+          command: ["sh", "-c"]
+          args:
+            - >
+              bin/pulsar initialize-cluster-metadata \
+                --cluster pulsar \
+                --zookeeper zk-0.zookeeper \
+                --configuration-store zk-0.zookeeper \
+                --web-service-url http://broker:8080/ \
+                --broker-service-url pulsar://broker:6650/ || true;
+      restartPolicy: Never
