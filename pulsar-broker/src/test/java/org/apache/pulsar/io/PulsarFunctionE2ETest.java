@@ -417,7 +417,7 @@ public class PulsarFunctionE2ETest {
         functionConfig.setOutput(sinkTopic2);
         admin.functions().updateFunctionWithUrl(functionConfig, jarFilePathUrl);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 TopicStats topicStats = admin.topics().getStats(sinkTopic2);
                 return topicStats.publishers.size() == 2
@@ -435,7 +435,7 @@ public class PulsarFunctionE2ETest {
         assertTrue(topicStats.publishers.get(0).metadata.containsKey("id"));
         assertEquals(topicStats.publishers.get(0).metadata.get("id"), String.format("%s/%s/%s", tenant, namespacePortion, functionName));
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.topics().getStats(sourceTopic).subscriptions.size() == 1;
             } catch (PulsarAdminException e) {
@@ -450,7 +450,7 @@ public class PulsarFunctionE2ETest {
             String data = "my-message-" + i;
             producer.newMessage().property(propertyKey, propertyValue).value(data).send();
         }
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 SubscriptionStats subStats = admin.topics().getStats(sourceTopic).subscriptions.get(subscriptionName);
                 return subStats.unackedMessages == 0;
@@ -471,7 +471,7 @@ public class PulsarFunctionE2ETest {
         // delete functions
         admin.functions().deleteFunction(tenant, namespacePortion, functionName);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.topics().getStats(sourceTopic).subscriptions.size() == 0;
             } catch (PulsarAdminException e) {
@@ -527,24 +527,20 @@ public class PulsarFunctionE2ETest {
 
         admin.sink().updateSinkWithUrl(sinkConfig, jarFilePathUrl);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 TopicStats topicStats = admin.topics().getStats(sourceTopic);
 
                 return topicStats.subscriptions.containsKey(subscriptionName)
                         && topicStats.subscriptions.get(subscriptionName).consumers.size() == 1
-                        && topicStats.subscriptions.get(subscriptionName).consumers.get(0).availablePermits == 523;
+                        && topicStats.subscriptions.get(subscriptionName).consumers.get(0).availablePermits == 523
+                        && topicStats.subscriptions.size() == 1
+                        && topicStats.subscriptions.containsKey(subscriptionName) == true;
 
             } catch (PulsarAdminException e) {
                 return false;
             }
         }, 50, 150);
-
-        TopicStats topicStats = admin.topics().getStats(sourceTopic);
-        assertEquals(topicStats.subscriptions.size(), 1);
-        assertTrue(topicStats.subscriptions.containsKey(subscriptionName));
-        assertEquals(topicStats.subscriptions.get(subscriptionName).consumers.size(), 1);
-        assertEquals(topicStats.subscriptions.get(subscriptionName).consumers.get(0).availablePermits, 523);
 
         // validate prometheus metrics empty
         String prometheusMetrics = getPrometheusMetrics(pulsar.getListenPortHTTP().get());
@@ -620,7 +616,7 @@ public class PulsarFunctionE2ETest {
             String data = "my-message-" + i;
             producer.newMessage().property(propertyKey, propertyValue).value(data).send();
         }
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 SubscriptionStats subStats = admin.topics().getStats(sourceTopic).subscriptions.get(subscriptionName);
                 return subStats.unackedMessages == 0 && subStats.msgThroughputOut == totalMsgs;
@@ -702,7 +698,7 @@ public class PulsarFunctionE2ETest {
         // delete functions
         admin.sink().deleteSink(tenant, namespacePortion, sinkName);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.topics().getStats(sourceTopic).subscriptions.size() == 0;
             } catch (PulsarAdminException e) {
@@ -746,7 +742,7 @@ public class PulsarFunctionE2ETest {
 
         admin.source().createSourceWithUrl(sourceConfig, jarFilePathUrl);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return (admin.topics().getStats(sinkTopic).publishers.size() == 1);
             } catch (PulsarAdminException e) {
@@ -758,7 +754,7 @@ public class PulsarFunctionE2ETest {
         sourceConfig.setTopicName(sinkTopic2);
         admin.source().updateSourceWithUrl(sourceConfig, jarFilePathUrl);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 TopicStats sourceStats = admin.topics().getStats(sinkTopic2);
                 return sourceStats.publishers.size() == 1
@@ -776,7 +772,7 @@ public class PulsarFunctionE2ETest {
         assertTrue(sourceStats.publishers.get(0).metadata.containsKey("id"));
         assertEquals(sourceStats.publishers.get(0).metadata.get("id"), String.format("%s/%s/%s", tenant, namespacePortion, sourceName));
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return (admin.topics().getStats(sinkTopic2).publishers.size() == 1) && (admin.topics().getInternalStats(sinkTopic2).numberOfEntries > 4);
             } catch (PulsarAdminException e) {
@@ -899,7 +895,7 @@ public class PulsarFunctionE2ETest {
         // try to update function to test: update-function functionality
         admin.functions().updateFunctionWithUrl(functionConfig, jarFilePathUrl);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.topics().getStats(sourceTopic).subscriptions.size() == 1;
             } catch (PulsarAdminException e) {
@@ -1047,7 +1043,7 @@ public class PulsarFunctionE2ETest {
             String data = "my-message-" + i;
             producer.newMessage().property(propertyKey, propertyValue).value(data).send();
         }
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 SubscriptionStats subStats = admin.topics().getStats(sourceTopic).subscriptions.get(subscriptionName);
                 return subStats.unackedMessages == 0 && subStats.msgThroughputOut == totalMsgs;
@@ -1191,7 +1187,7 @@ public class PulsarFunctionE2ETest {
         // delete functions
         admin.functions().deleteFunction(tenant, namespacePortion, functionName);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.topics().getStats(sourceTopic).subscriptions.size() == 0;
             } catch (PulsarAdminException e) {
@@ -1235,7 +1231,7 @@ public class PulsarFunctionE2ETest {
         // try to update function to test: update-function functionality
         admin.functions().updateFunctionWithUrl(functionConfig, jarFilePathUrl);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.topics().getStats(sourceTopic).subscriptions.size() == 1;
             } catch (PulsarAdminException e) {
@@ -1250,7 +1246,7 @@ public class PulsarFunctionE2ETest {
             String data = "my-message-" + i;
             producer.newMessage().property(propertyKey, propertyValue).value(data).send();
         }
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 SubscriptionStats subStats = admin.topics().getStats(sourceTopic).subscriptions.get(subscriptionName);
                 return subStats.unackedMessages == 0 && subStats.msgThroughputOut == totalMsgs;
@@ -1278,7 +1274,7 @@ public class PulsarFunctionE2ETest {
         // delete functions
         admin.functions().deleteFunction(tenant, namespacePortion, functionName);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.topics().getStats(sourceTopic).subscriptions.size() == 0;
             } catch (PulsarAdminException e) {
@@ -1341,7 +1337,7 @@ public class PulsarFunctionE2ETest {
                 sourceTopicName, sinkTopic, subscriptionName);
         admin.functions().createFunctionWithUrl(functionConfig, jarFilePathUrl);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 SubscriptionStats subStats = admin.topics().getStats(sourceTopic).subscriptions.get(subscriptionName);
                 return subStats != null && subStats.consumers.size() == 1;
@@ -1356,7 +1352,7 @@ public class PulsarFunctionE2ETest {
         // it should stop consumer : so, check none of the consumer connected on subscription
         admin.functions().stopFunction(tenant, namespacePortion, functionName);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 SubscriptionStats subStat = admin.topics().getStats(sourceTopic).subscriptions.get(subscriptionName);
                 return subStat != null && subStat.consumers.size() == 0;
@@ -1371,7 +1367,7 @@ public class PulsarFunctionE2ETest {
         // it should restart consumer : so, check if consumer came up again after restarting function
         admin.functions().restartFunction(tenant, namespacePortion, functionName);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 SubscriptionStats subStat = admin.topics().getStats(sourceTopic).subscriptions.get(subscriptionName);
                 return subStat != null && subStat.consumers.size() == 1;
@@ -1415,7 +1411,7 @@ public class PulsarFunctionE2ETest {
         functionConfig.setRuntime(FunctionConfig.Runtime.JAVA);
 
         admin.functions().createFunctionWithUrl(functionConfig, jarFilePathUrl);
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.functions().getFunction(tenant, namespacePortion, functionName).getCleanupSubscription();
             } catch (PulsarAdminException e) {
@@ -1424,7 +1420,7 @@ public class PulsarFunctionE2ETest {
         }, 5, 150);
         assertFalse(admin.functions().getFunction(tenant, namespacePortion, functionName).getCleanupSubscription());
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.topics().getStats(sourceTopic).subscriptions.size() == 1;
             } catch (PulsarAdminException e) {
@@ -1438,7 +1434,7 @@ public class PulsarFunctionE2ETest {
         functionConfig.setCleanupSubscription(true);
         admin.functions().updateFunctionWithUrl(functionConfig, jarFilePathUrl);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.functions().getFunction(tenant, namespacePortion, functionName).getCleanupSubscription();
             } catch (PulsarAdminException e) {
@@ -1452,7 +1448,7 @@ public class PulsarFunctionE2ETest {
             String data = "my-message-" + i;
             producer.newMessage().property(propertyKey, propertyValue).value(data).send();
         }
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 SubscriptionStats subStats = admin.topics().getStats(sourceTopic).subscriptions.get(
                         InstanceUtils.getDefaultSubscriptionName(tenant, namespacePortion, functionName));
@@ -1481,7 +1477,7 @@ public class PulsarFunctionE2ETest {
         // delete functions
         admin.functions().deleteFunction(tenant, namespacePortion, functionName);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.topics().getStats(sourceTopic).subscriptions.size() == 0;
             } catch (PulsarAdminException e) {
@@ -1497,7 +1493,7 @@ public class PulsarFunctionE2ETest {
         functionConfig.setCleanupSubscription(false);
         admin.functions().createFunctionWithUrl(functionConfig, jarFilePathUrl);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.topics().getStats(sourceTopic).subscriptions.size() == 1;
             } catch (PulsarAdminException e) {
@@ -1507,7 +1503,7 @@ public class PulsarFunctionE2ETest {
         // validate pulsar source consumer has started on the topic
         assertEquals(admin.topics().getStats(sourceTopic).subscriptions.size(), 1);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 FunctionConfig result = admin.functions().getFunction(tenant, namespacePortion, functionName);
                 return result.getParallelism() == 2 && result.getCleanupSubscription() == false;
@@ -1521,7 +1517,7 @@ public class PulsarFunctionE2ETest {
         functionConfig.setParallelism(2);
         admin.functions().updateFunctionWithUrl(functionConfig, jarFilePathUrl);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 FunctionConfig result = admin.functions().getFunction(tenant, namespacePortion, functionName);
                 return result.getParallelism() == 2 && result.getCleanupSubscription() == false;
@@ -1534,7 +1530,7 @@ public class PulsarFunctionE2ETest {
         // delete functions
         admin.functions().deleteFunction(tenant, namespacePortion, functionName);
 
-        retryStrategically((test) -> {
+        retryStrategically(() -> {
             try {
                 return admin.topics().getStats(sourceTopic).subscriptions.size() == 1;
             } catch (PulsarAdminException e) {
