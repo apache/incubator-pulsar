@@ -25,17 +25,22 @@ import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+
 import org.apache.pulsar.client.impl.BatchMessageIdImpl;
 import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.client.impl.ReaderImpl;
 import org.apache.pulsar.common.policies.data.TopicStats;
-import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.RelativeTimeUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -638,7 +643,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
 
         // Read all halved messages after seek()
         Set<String> messageSetB = Sets.newHashSet();
-        for (int i = halfMessages + 1; i < numOfMessage; i++) {
+        for (int i = halfMessages; i < numOfMessage; i++) {
             Message<byte[]> message = reader.readNext();
             String receivedMessage = new String(message.getData());
             String expectedMessage = String.format("msg num %d", i);
