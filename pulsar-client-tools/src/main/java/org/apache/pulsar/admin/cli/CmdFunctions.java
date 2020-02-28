@@ -74,6 +74,7 @@ public class CmdFunctions extends CmdBase {
     private final ListFunctions lister;
     private final StateGetter stateGetter;
     private final StatePutter statePutter;
+    private final StateDeleter stateDeleter;
     private final TriggerFunction triggerer;
     private final UploadFunction uploader;
     private final DownloadFunction downloader;
@@ -864,6 +865,21 @@ public class CmdFunctions extends CmdBase {
         }
     }
 
+    @Parameters(commandDescription = "Delete the state associated with a Pulsar Function")
+    class StateDeleter extends FunctionCommand {
+
+        @Parameter(names = { "-k", "--key" }, description = "Key name of State")
+        private String key = null;
+
+        @Override
+        void runCmd() throws Exception {
+            if (isBlank(key)) {
+                throw new ParameterException("State key needs to be specified");
+            }
+            admin.functions().deleteFunctionState(tenant, namespace, functionName, key);
+        }
+    }
+
     @Parameters(commandDescription = "Trigger the specified Pulsar Function with a supplied value")
     class TriggerFunction extends FunctionCommand {
         // for backward compatibility purposes
@@ -989,6 +1005,7 @@ public class CmdFunctions extends CmdBase {
         lister = new ListFunctions();
         stateGetter = new StateGetter();
         statePutter = new StatePutter();
+        stateDeleter = new StateDeleter();
         triggerer = new TriggerFunction();
         uploader = new UploadFunction();
         downloader = new DownloadFunction();
@@ -1009,6 +1026,7 @@ public class CmdFunctions extends CmdBase {
         jcommander.addCommand("list", getLister());
         jcommander.addCommand("querystate", getStateGetter());
         jcommander.addCommand("putstate", getStatePutter());
+        jcommander.addCommand("deletestate", getStateDeleter());
         jcommander.addCommand("trigger", getTriggerer());
         jcommander.addCommand("upload", getUploader());
         jcommander.addCommand("download", getDownloader());
@@ -1050,6 +1068,11 @@ public class CmdFunctions extends CmdBase {
     @VisibleForTesting
     StatePutter getStatePutter() {
         return statePutter;
+    }
+
+    @VisibleForTesting
+    StateDeleter getStateDeleter() {
+        return stateDeleter;
     }
 
     @VisibleForTesting
