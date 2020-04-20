@@ -27,6 +27,7 @@ import org.apache.pulsar.common.functions.ConsumerConfig;
 import org.apache.pulsar.common.functions.FunctionConfig;
 import org.apache.pulsar.common.functions.Resources;
 import org.apache.pulsar.common.functions.WindowConfig;
+import org.apache.pulsar.common.functions.SkywalkingConfig;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.functions.proto.Function;
 import org.apache.pulsar.functions.proto.Function.FunctionDetails;
@@ -243,6 +244,24 @@ public class FunctionConfigUtils {
             functionDetailsBuilder.setCustomRuntimeOptions(functionConfig.getCustomRuntimeOptions());
         }
 
+        SkywalkingConfig skywalkingConfig = functionConfig.getSkywalkingConfig();
+        if (skywalkingConfig != null) {
+            Function.SkywalkingConfig.Builder swbldr = Function.SkywalkingConfig.newBuilder();
+            if (skywalkingConfig.getSkywalkingAgentJarPath() != null) {
+                swbldr.setSkywalkingAgentJarPath(skywalkingConfig.getSkywalkingAgentJarPath());
+            }
+
+            if (skywalkingConfig.getSkywalkingAgentConfPath() != null) {
+                swbldr.setSkywalkingAgentConfPath(skywalkingConfig.getSkywalkingAgentConfPath());
+            }
+
+            if (skywalkingConfig.getSkywalkingBackendService() != null) {
+                swbldr.setSkywalkingBackendService(skywalkingConfig.getSkywalkingBackendService());
+            }
+
+            functionDetailsBuilder.setSkywalkingConfig(swbldr);
+        }
+        
         return functionDetailsBuilder.build();
     }
 
@@ -348,6 +367,13 @@ public class FunctionConfigUtils {
             functionConfig.setCustomRuntimeOptions(functionDetails.getCustomRuntimeOptions());
         }
 
+        if (functionDetails.hasSkywalkingConfig()) {
+            SkywalkingConfig skywalkingConfig = new SkywalkingConfig();
+            skywalkingConfig.setSkywalkingAgentJarPath(functionDetails.getSkywalkingConfig().getSkywalkingAgentJarPath());
+            skywalkingConfig.setSkywalkingAgentConfPath(functionDetails.getSkywalkingConfig().getSkywalkingAgentConfPath());
+            skywalkingConfig.setSkywalkingBackendService(functionDetails.getSkywalkingConfig().getSkywalkingBackendService());
+            functionConfig.setSkywalkingConfig(skywalkingConfig);
+        }
         return functionConfig;
     }
 
@@ -563,6 +589,10 @@ public class FunctionConfigUtils {
             ResourceConfigUtils.validate(functionConfig.getResources());
         }
 
+        if (functionConfig.getSkywalkingConfig() != null) {
+            SkywalkingConfigUtils.validate(functionConfig.getSkywalkingConfig());
+        }
+        
         if (functionConfig.getTimeoutMs() != null && functionConfig.getTimeoutMs() <= 0) {
             throw new IllegalArgumentException("Function timeout must be a positive number");
         }
@@ -792,6 +822,9 @@ public class FunctionConfigUtils {
         }
         if (!StringUtils.isEmpty(newConfig.getCustomRuntimeOptions())) {
             mergedConfig.setCustomRuntimeOptions(newConfig.getCustomRuntimeOptions());
+        }
+        if (newConfig.getSkywalkingConfig() != null) {
+            mergedConfig.setSkywalkingConfig(newConfig.getSkywalkingConfig());
         }
         return mergedConfig;
     }
