@@ -65,6 +65,7 @@ import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.impl.conf.ProducerConfigurationData;
 import org.apache.pulsar.client.impl.crypto.MessageCryptoBc;
 import org.apache.pulsar.client.impl.schema.JSONSchema;
+import org.apache.pulsar.common.api.proto.PulsarApi;
 import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
 import org.apache.pulsar.common.api.proto.PulsarApi.ProtocolVersion;
 import org.apache.pulsar.common.compression.CompressionCodec;
@@ -101,6 +102,7 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
     // Globally unique producer name
     private String producerName;
     private boolean userProvidedProducerName = false;
+    private PulsarApi.CommandProducer.GroupMode groupMode;
 
     private String connectionId;
     private String connectedSince;
@@ -142,6 +144,7 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
         if (StringUtils.isNotBlank(producerName)) {
             this.userProvidedProducerName = true;
         }
+        this.groupMode = getGroupMode();
         this.partitionIndex = partitionIndex;
         this.pendingMessages = Queues.newArrayBlockingQueue(conf.getMaxPendingMessages());
         this.pendingCallbacks = Queues.newArrayBlockingQueue(conf.getMaxPendingMessages());
@@ -1123,7 +1126,7 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
 
         cnx.sendRequestWithId(
                 Commands.newProducer(topic, producerId, requestId, producerName, conf.isEncryptionEnabled(), metadata,
-                       schemaInfo, connectionHandler.epoch, userProvidedProducerName),
+                       schemaInfo, connectionHandler.epoch, userProvidedProducerName, groupMode),
                 requestId).thenAccept(response -> {
                     String producerName = response.getProducerName();
                     long lastSequenceId = response.getLastSequenceId();

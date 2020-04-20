@@ -379,7 +379,7 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
             isFenced = true;
             // close all producers
             List<CompletableFuture<Void>> futures = Lists.newArrayList();
-            producers.values().forEach(producer -> futures.add(producer.disconnect()));
+            getProducers().forEach(producer -> futures.add(producer.disconnect()));
             FutureUtil.waitForAll(futures).handle((BiFunction<Void, Throwable, Void>) (aVoid, throwable) -> {
                 decrementPendingWriteOpsAndCheck();
                 return null;
@@ -441,7 +441,7 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
 
     private boolean hasRemoteProducers() {
         AtomicBoolean foundRemote = new AtomicBoolean(false);
-        producers.values().forEach(producer -> {
+        getProducers().forEach(producer -> {
             if (producer.isRemote()) {
                 foundRemote.set(true);
             }
@@ -482,15 +482,6 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
         List<CompletableFuture<Void>> closeFutures = Lists.newArrayList();
         replicators.forEach((region, replicator) -> closeFutures.add(replicator.disconnect(true)));
         return FutureUtil.waitForAll(closeFutures);
-    }
-
-    @Override
-    public void removeProducer(Producer producer) {
-        checkArgument(producer.getTopic() == this);
-
-        if (producers.remove(producer.getProducerName(), producer)) {
-            handleProducerRemoved(producer);
-        }
     }
 
     @Override
@@ -847,7 +838,7 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
             if (closeIfClientsConnected) {
                 List<CompletableFuture<Void>> futures = Lists.newArrayList();
                 replicators.forEach((cluster, replicator) -> futures.add(replicator.disconnect()));
-                producers.values().forEach(producer -> futures.add(producer.disconnect()));
+                getProducers().forEach(producer -> futures.add(producer.disconnect()));
                 subscriptions.forEach((s, sub) -> futures.add(sub.disconnect()));
                 FutureUtil.waitForAll(futures).thenRun(() -> {
                     closeClientFuture.complete(null);
@@ -966,7 +957,7 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
         List<CompletableFuture<Void>> futures = Lists.newArrayList();
 
         replicators.forEach((cluster, replicator) -> futures.add(replicator.disconnect()));
-        producers.values().forEach(producer -> futures.add(producer.disconnect()));
+        getProducers().forEach(producer -> futures.add(producer.disconnect()));
         subscriptions.forEach((s, sub) -> futures.add(sub.disconnect()));
         
         CompletableFuture<Void> clientCloseFuture = closeWithoutWaitingClientDisconnect ? CompletableFuture.completedFuture(null)
@@ -1287,13 +1278,13 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
 
         replicators.forEach((region, replicator) -> replicator.updateRates());
 
-        nsStats.producerCount += producers.size();
-        bundleStats.producerCount += producers.size();
+        nsStats.producerCount += getProducers().count();
+        bundleStats.producerCount += getProducers().count();
         topicStatsStream.startObject(topic);
 
         // start publisher stats
         topicStatsStream.startList("publishers");
-        producers.values().forEach(producer -> {
+        getProducers().forEach(producer -> {
             producer.updateRates();
             PublisherStats publisherStats = producer.getStats();
 
@@ -1451,7 +1442,7 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
         // Remaining dest stats.
         topicStatsHelper.averageMsgSize = topicStatsHelper.aggMsgRateIn == 0.0 ? 0.0
                 : (topicStatsHelper.aggMsgThroughputIn / topicStatsHelper.aggMsgRateIn);
-        topicStatsStream.writePair("producerCount", producers.size());
+        topicStatsStream.writePair("producerCount", getProducers().count());
         topicStatsStream.writePair("averageMsgSize", topicStatsHelper.averageMsgSize);
         topicStatsStream.writePair("msgRateIn", topicStatsHelper.aggMsgRateIn);
         topicStatsStream.writePair("msgRateOut", topicStatsHelper.aggMsgRateOut);
@@ -1496,7 +1487,7 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
 
         ObjectObjectHashMap<String, PublisherStats> remotePublishersStats = new ObjectObjectHashMap<String, PublisherStats>();
 
-        producers.values().forEach(producer -> {
+        getProducers().forEach(producer -> {
             PublisherStats publisherStats = producer.getStats();
             stats.msgRateIn += publisherStats.msgRateIn;
             stats.msgThroughputIn += publisherStats.msgThroughputIn;
@@ -1756,7 +1747,7 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
         
         this.updateMaxPublishRate(data);
 
-        producers.values().forEach(producer -> {
+        getProducers().forEach(producer -> {
             producer.checkPermissions();
             producer.checkEncryption();
         });
@@ -1835,7 +1826,7 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
         ledger.asyncTerminate(new TerminateCallback() {
             @Override
             public void terminateComplete(Position lastCommittedPosition, Object ctx) {
-                producers.values().forEach(Producer::disconnect);
+                getProducers().forEach(Producer::disconnect);
                 subscriptions.forEach((name, sub) -> sub.topicTerminated());
 
                 PositionImpl lastPosition = (PositionImpl) lastCommittedPosition;
