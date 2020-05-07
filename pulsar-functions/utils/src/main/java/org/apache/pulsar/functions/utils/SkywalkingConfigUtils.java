@@ -16,23 +16,21 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.pulsar.functions.api.examples;
 
-import org.apache.pulsar.functions.api.Context;
-import org.apache.pulsar.functions.api.Function;
+package org.apache.pulsar.functions.utils;
 
-/**
- * The classic Exclamation Function that appends an exclamation at the end
- * of the input.
- */
-public class ExclamationFunction implements Function<String, String> {
-    @Override
-    public void prepare(Context context) throws Exception {
+import org.apache.pulsar.common.functions.SkywalkingConfig;
 
-    }
+public class SkywalkingConfigUtils {
 
-    @Override
-    public String process(String input, Context context) {
-        return String.format("%s!", input);
+    public static void validate(SkywalkingConfig skywalkingConfig) {
+        if (skywalkingConfig.getSkywalkingAgentJarPath() == null) {
+            throw new IllegalArgumentException("SkywalkingAgent Jar is not specified");
+        }
+
+        if (skywalkingConfig.getSkywalkingAgentConfPath() == null
+            && skywalkingConfig.getSkywalkingBackendService() == null) {
+            throw new IllegalArgumentException("SkywalkingAgent Config Path is not specified or SkywalkingAgent Backend Service is not specified");
+        }
     }
 }
