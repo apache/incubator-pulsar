@@ -32,6 +32,12 @@ MESSAGE(STATUS "ARCHITECTURE: ${CMAKE_SYSTEM_PROCESSOR}")
 option(BUILD_TESTS "Build tests" ON)
 MESSAGE(STATUS "BUILD_TESTS:  " ${BUILD_TESTS})
 
+option(BUILD_EXAMPLES "Build examples" ON)
+MESSAGE(STATUS "BUILD_EXAMPLES:  " ${BUILD_EXAMPLES})
+
+option(BUILD_PERF "Build perf clients" ON)
+MESSAGE(STATUS "BUILD_PERF:  " ${BUILD_PERF})
+
 option(BUILD_PYTHON_WRAPPER "Build Pulsar Python wrapper" ON)
 MESSAGE(STATUS "BUILD_PYTHON_WRAPPER:  " ${BUILD_PYTHON_WRAPPER})
 
@@ -95,12 +101,28 @@ unset(OPENSSL_SSL_LIBRARIES CACHE)
 unset(OPENSSL_LIBRARIES CACHE)
 unset(OPENSSL_VERSION CACHE)
 
+MACRO(composeLibraryList LIBRARIES DEBUG_LIBRARIES)
+    IF (${DEBUG_LIBRARIES})
+        SET(${LIBRARIES} "optimized" ${${LIBRARIES}} "debug" ${${DEBUG_LIBRARIES}})
+    ENDIF()
+ENDMACRO()
+
 if (LINK_STATIC)
-    find_library(ZLIB_LIBRARIES REQUIRED NAMES libz.a z zlib)
-    find_library(Protobuf_LITE_LIBRARIES NAMES libprotobuf-lite.a libprotobuf-lite)
-    find_library(CURL_LIBRARIES NAMES libcurl.a curl curl_a libcurl_a)
+    find_library(ZLIB_LIBRARIES REQUIRED NAMES libz.a z zlibstatic zlib)
+    find_library(ZLIB_DEBUG_LIBRARIES NAMES zlibstaticd zlibd)
+    find_library(Protobuf_LITE_LIBRARIES REQUIRED NAMES libprotobuf-lite.a libprotobuf-lite)
+    find_library(Protobuf_LITE_DEBUG_LIBRARIES NAMES libprotobuf-lited)
+    find_library(CURL_LIBRARIES NAMES curl_a libcurl_a libcurl.a curl)
+    find_library(CURL_DEBUG_LIBRARIES NAMES curl_a_debug libcurl_a_debug)
     find_library(LIB_ZSTD NAMES libzstd.a)
     find_library(LIB_SNAPPY NAMES libsnappy.a)
+    
+    composeLibraryList(ZLIB_LIBRARIES ZLIB_DEBUG_LIBRARIES)
+    composeLibraryList(Protobuf_LITE_LIBRARIES Protobuf_LITE_DEBUG_LIBRARIES)
+    composeLibraryList(CURL_LIBRARIES CURL_DEBUG_LIBRARIES)
+
+    find_path(Protobuf_INCLUDE_DIRS google/protobuf/stubs/common.h)
+    find_path(ZLIB_INCLUDE_DIRS zlib.h)
 
     if (USE_LOG4CXX)
         if (LOG4CXX_USE_DYNAMIC_LIBS)
@@ -138,6 +160,8 @@ else()
         find_package(ProtoBuf QUIET)
         if (NOT Protobuf_FOUND OR NOT Protobuf_LITE_LIBRARIES)
             find_library(Protobuf_LITE_LIBRARIES protobuf-lite libprotobuf-lite)
+            find_library(Protobuf_LITE_DEBUG_LIBRARIES protobuf-lited libprotobuf-lited)
+            composeLibraryList(Protobuf_LITE_LIBRARIES Protobuf_LITE_DEBUG_LIBRARIES)
             find_path(Protobuf_INCLUDE_DIRS google/protobuf/stubs/common.h)
         endif()
     endif (NOT PROTOBUF_LIBRARIES)
@@ -145,12 +169,16 @@ else()
     find_library(LIB_ZSTD zstd)
     find_library(LIB_SNAPPY NAMES snappy libsnappy)
     find_library(CURL_LIBRARIES NAMES curl libcurl)
+    find_library(CURL_DEBUG_LIBRARIES NAMES curl_debug libcurl_debug)
+    composeLibraryList(CURL_LIBRARIES CURL_DEBUG_LIBRARIES)
 
     if (USE_LOG4CXX)
         find_library(LOG4CXX_LIBRARY_PATH log4cxx)
         find_path(LOG4CXX_INCLUDE_PATH log4cxx/logger.h)
     endif (USE_LOG4CXX)
 endif (LINK_STATIC)
+
+find_path(CURL_INCLUDE_DIRS curl/curl.h)
 
 if (MSVC)
   find_package(Boost REQUIRED COMPONENTS program_options regex system date_time)
@@ -319,8 +347,14 @@ set(CLIENT_LIBS
 )
 
 add_subdirectory(lib)
-add_subdirectory(perf)
-add_subdirectory(examples)
+
+if (BUILD_PERF)
+    add_subdirectory(perf)
+endif()
+
+if (BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
 
 if (BUILD_TESTS)
     add_subdirectory(tests)
