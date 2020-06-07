@@ -22,16 +22,18 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 import com.google.common.annotations.Beta;
 import com.google.common.base.Charsets;
+
 import java.time.Clock;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import org.apache.bookkeeper.client.EnsemblePlacementPolicy;
 import org.apache.bookkeeper.client.api.DigestType;
-
 import org.apache.bookkeeper.mledger.impl.NullLedgerOffloader;
-
 import org.apache.pulsar.common.util.collections.ConcurrentOpenLongPairRangeSet;
 
 /**
@@ -72,6 +74,9 @@ public class ManagedLedgerConfig {
     private LedgerOffloader ledgerOffloader = NullLedgerOffloader.INSTANCE;
     private int newEntriesCheckDelayInMillis = 10;
     private Clock clock = Clock.systemUTC();
+    @Getter
+    @Setter
+    private Runnable createFunctionInterceptFunc;
 
     public boolean isCreateIfMissing() {
         return createIfMissing;
@@ -559,7 +564,7 @@ public class ManagedLedgerConfig {
     /**
      * Managed-ledger can setup different custom EnsemblePlacementPolicy (eg: affinity to write ledgers to only setup of
      * group of bookies).
-     * 
+     *
      * @return
      */
     public Class<? extends EnsemblePlacementPolicy> getBookKeeperEnsemblePlacementPolicyClassName() {
@@ -568,7 +573,7 @@ public class ManagedLedgerConfig {
 
     /**
      * Returns EnsemblePlacementPolicy configured for the Managed-ledger.
-     * 
+     *
      * @param bookKeeperEnsemblePlacementPolicyClassName
      */
     public void setBookKeeperEnsemblePlacementPolicyClassName(
@@ -578,7 +583,7 @@ public class ManagedLedgerConfig {
 
     /**
      * Returns properties required by configured bookKeeperEnsemblePlacementPolicy.
-     * 
+     *
      * @return
      */
     public Map<String, Object> getBookKeeperEnsemblePlacementPolicyProperties() {
@@ -588,7 +593,7 @@ public class ManagedLedgerConfig {
     /**
      * Managed-ledger can setup different custom EnsemblePlacementPolicy which needs
      * bookKeeperEnsemblePlacementPolicy-Properties.
-     * 
+     *
      * @param bookKeeperEnsemblePlacementPolicyProperties
      */
     public void setBookKeeperEnsemblePlacementPolicyProperties(
