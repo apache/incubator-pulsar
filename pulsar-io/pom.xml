@@ -41,6 +41,7 @@
     <module>aws</module>
     <module>twitter</module>
     <module>cassandra</module>
+    <module>couchbase</module>
     <module>aerospike</module>
     <module>kafka</module>
     <module>rabbitmq</module>
@@ -58,7 +59,6 @@
     <module>hbase</module>
     <module>mongo</module>
     <module>flume</module>
-    <module>redis</module>
     <module>solr</module>
     <module>influxdb</module>
     <module>dynamodb</module>
