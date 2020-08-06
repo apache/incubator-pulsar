@@ -22,13 +22,17 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.pulsar.broker.cache.ConfigurationCacheService.POLICIES;
+import static org.apache.pulsar.broker.web.PulsarWebResource.path;
+
 import com.carrotsearch.hppc.ObjectObjectHashMap;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.FastThreadLocal;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +46,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.function.BiFunction;
+
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.CloseCallback;
@@ -100,6 +105,7 @@ import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.common.api.proto.PulsarApi;
 import org.apache.pulsar.common.api.proto.PulsarApi.CommandSubscribe.InitialPosition;
 import org.apache.pulsar.common.api.proto.PulsarApi.CommandSubscribe.SubType;
+import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.BacklogQuota;
 import org.apache.pulsar.common.policies.data.ConsumerStats;
@@ -220,7 +226,7 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
         this.delayedDeliveryTickTimeMillis = brokerService.pulsar().getConfiguration().getDelayedDeliveryTickTimeMillis();
         this.backloggedCursorThresholdEntries = brokerService.pulsar().getConfiguration().getManagedLedgerCursorBackloggedThreshold();
 
-        initializeDispatchRateLimiterIfNeeded(Optional.empty());
+        initializeDispatchRateLimiterIfNeeded(getPolicies(brokerService, topic));
 
         this.compactedTopic = new CompactedTopicImpl(brokerService.pulsar().getBookKeeperClient());
 
@@ -287,11 +293,11 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
             // dispatch rate limiter for topic
             if (!dispatchRateLimiter.isPresent() && DispatchRateLimiter
                     .isDispatchRateNeeded(brokerService, policies, topic, Type.TOPIC)) {
-                this.dispatchRateLimiter = Optional.of(new DispatchRateLimiter(this, Type.TOPIC));
+                this.dispatchRateLimiter = Optional.of(new DispatchRateLimiter(this, Type.TOPIC, policies));
             }
             if (!subscribeRateLimiter.isPresent() && SubscribeRateLimiter
                     .isDispatchRateNeeded(brokerService, policies, topic)) {
-                this.subscribeRateLimiter = Optional.of(new SubscribeRateLimiter(this));
+                this.subscribeRateLimiter = Optional.of(new SubscribeRateLimiter(this, policies));
             }
 
             // dispatch rate limiter for each subscription
@@ -2209,5 +2215,20 @@ public class PersistentTopic extends AbstractTopic implements Topic, AddEntryCal
     @Override
     public boolean isSystemTopic() {
         return false;
+    }
+
+    public static Optional<Policies> getPolicies(BrokerService brokerService, String topicName) {
+        final NamespaceName namespace = TopicName.get(topicName).getNamespaceObject();
+        final String path = path(POLICIES, namespace.toString());
+        Optional<Policies> policies = Optional.empty();
+        try {
+            policies = brokerService.pulsar().getConfigurationCache()
+                .policiesCache().getAsync(path).get(
+                        brokerService.pulsar().getConfiguration().getZooKeeperOperationTimeoutSeconds(),
+                        TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("Failed to get message-rate for {} ", topicName, e);
+        }
+        return policies;
     }
 }

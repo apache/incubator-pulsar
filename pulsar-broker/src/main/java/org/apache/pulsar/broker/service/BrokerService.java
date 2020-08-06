@@ -1703,7 +1703,9 @@ public class BrokerService implements Closeable, ZooKeeperCacheListener<Policies
             // update message-rate for each topic
             forEachTopic(topic -> {
                 if (topic.getDispatchRateLimiter().isPresent()) {
-                    topic.getDispatchRateLimiter().get().updateDispatchRate();
+                    topic.getDispatchRateLimiter().get().updateDispatchRate(
+                            pulsar().getConfiguration().getClusterName(),
+                            PersistentTopic.getPolicies(BrokerService.this, topic.getName()));
                 }
             });
         });
@@ -1715,8 +1717,11 @@ public class BrokerService implements Closeable, ZooKeeperCacheListener<Policies
             forEachTopic(topic -> {
                 topic.getSubscriptions().forEach((subName, persistentSubscription) -> {
                     Dispatcher dispatcher = persistentSubscription.getDispatcher();
-                    if (dispatcher != null) {
-                        dispatcher.getRateLimiter().ifPresent(DispatchRateLimiter::updateDispatchRate);
+                    if (dispatcher != null && dispatcher.getRateLimiter().isPresent()) {
+                        dispatcher.getRateLimiter().get()
+                            .updateDispatchRate(
+                                    pulsar().getConfiguration().getClusterName(),
+                                    PersistentTopic.getPolicies(BrokerService.this, topic.getName()));
                     }
                 });
             });
@@ -1729,7 +1734,9 @@ public class BrokerService implements Closeable, ZooKeeperCacheListener<Policies
             forEachTopic(topic ->
                 topic.getReplicators().forEach((name, persistentReplicator) -> {
                     if (persistentReplicator.getRateLimiter().isPresent()) {
-                        persistentReplicator.getRateLimiter().get().updateDispatchRate();
+                        persistentReplicator.getRateLimiter().get().updateDispatchRate(
+                            pulsar().getConfiguration().getClusterName(),
+                            PersistentTopic.getPolicies(BrokerService.this, topic.getName()));
                     }
                 }));
         });
