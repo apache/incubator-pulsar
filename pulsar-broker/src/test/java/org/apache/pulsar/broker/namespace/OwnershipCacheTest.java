@@ -54,15 +54,11 @@ import org.apache.pulsar.zookeeper.ZooKeeperDataCache;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.MockZooKeeper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 public class OwnershipCacheTest {
-    private static final Logger log = LoggerFactory.getLogger(OwnershipCacheTest.class);
-
     private PulsarService pulsar;
     private ServiceConfiguration config;
     private String selfBrokerUrl;
@@ -122,7 +118,7 @@ public class OwnershipCacheTest {
     public void testDisableOwnership() throws Exception {
         OwnershipCache cache = new OwnershipCache(this.pulsar, bundleFactory, null);
 
-        NamespaceBundle testBundle = bundleFactory.getFullBundle(NamespaceName.get("pulsar/test/ns-1"));
+        NamespaceBundle testBundle = bundleFactory.getFullBundle(NamespaceName.get("pulsar/test/ns-1")).join();
         assertFalse(cache.getOwnerAsync(testBundle).get().isPresent());
 
         NamespaceEphemeralData data1 = cache.tryAcquiringOwnership(testBundle).get();
@@ -137,7 +133,7 @@ public class OwnershipCacheTest {
     @Test
     public void testGetOrSetOwner() throws Exception {
         OwnershipCache cache = new OwnershipCache(this.pulsar, bundleFactory, null);
-        NamespaceBundle testFullBundle = bundleFactory.getFullBundle(NamespaceName.get("pulsar/test/ns-2"));
+        NamespaceBundle testFullBundle = bundleFactory.getFullBundle(NamespaceName.get("pulsar/test/ns-2")).join();
         // case 1: no one owns the namespace
         assertFalse(cache.getOwnerAsync(testFullBundle).get().isPresent());
 
@@ -145,7 +141,7 @@ public class OwnershipCacheTest {
         assertEquals(data1.getNativeUrl(), selfBrokerUrl);
         assertFalse(data1.isDisabled());
         // case 2: the local broker owned the namespace and disabled, getOrSetOwner() should not change it
-        OwnedBundle nsObj = cache.getOwnedBundle(testFullBundle);
+        OwnedBundle nsObj = cache.getOwnedBundle(testFullBundle).get();
         // this would disable the ownership
         doReturn(cache).when(nsService).getOwnershipCache();
         nsObj.handleUnloadRequest(pulsar, 5, TimeUnit.SECONDS).join();
@@ -168,7 +164,7 @@ public class OwnershipCacheTest {
     @Test
     public void testGetOwner() throws Exception {
         OwnershipCache cache = new OwnershipCache(this.pulsar, bundleFactory, null);
-        NamespaceBundle testBundle = bundleFactory.getFullBundle(NamespaceName.get("pulsar/test/ns-3"));
+        NamespaceBundle testBundle = bundleFactory.getFullBundle(NamespaceName.get("pulsar/test/ns-3")).join();
         // case 1: no one owns the namespace
         assertFalse(cache.getOwnerAsync(testBundle).get().isPresent());
         // case 2: someone owns the namespace
@@ -193,7 +189,7 @@ public class OwnershipCacheTest {
             });
 
         Optional<NamespaceEphemeralData> res = cache
-                .getOwnerAsync(bundleFactory.getFullBundle(NamespaceName.get("pulsar/test/ns-none"))).get();
+                .getOwnerAsync(bundleFactory.getFullBundle(NamespaceName.get("pulsar/test/ns-none")).join()).get();
         assertFalse(res.isPresent());
     }
 
@@ -201,26 +197,16 @@ public class OwnershipCacheTest {
     public void testGetOwnedServiceUnit() throws Exception {
         OwnershipCache cache = new OwnershipCache(this.pulsar, bundleFactory, null);
         NamespaceName testNs = NamespaceName.get("pulsar/test/ns-5");
-        NamespaceBundle testBundle = bundleFactory.getFullBundle(testNs);
+        NamespaceBundle testBundle = bundleFactory.getFullBundle(testNs).join();
         // case 1: no one owns the namespace
         assertFalse(cache.getOwnerAsync(testBundle).get().isPresent());
 
-        try {
-            checkNotNull(cache.getOwnedBundle(testBundle));
-            fail("Should have failed");
-        } catch (NullPointerException npe) {
-            // OK for not owned namespace
-        }
+        assertFalse(cache.getOwnedBundle(testBundle).isPresent());
         // case 2: someone else owns the namespace
         ServiceUnitZkUtils.acquireNameSpace(zkCache.getZooKeeper(), ServiceUnitZkUtils.path(testBundle),
                 new NamespaceEphemeralData("pulsar://otherhost:8881", "pulsar://otherhost:8884",
                         "http://otherhost:8080", "https://otherhost:4443", false));
-        try {
-            checkNotNull(cache.getOwnedBundle(testBundle));
-            fail("Should have failed");
-        } catch (NullPointerException npe) {
-            // OK for not owned namespace
-        }
+        assertFalse(cache.getOwnedBundle(testBundle).isPresent());
 
         Thread.sleep(500);
 
@@ -229,12 +215,7 @@ public class OwnershipCacheTest {
         assertEquals(data1.getNativeUrl(), "pulsar://otherhost:8881");
         assertEquals(data1.getNativeUrlTls(), "pulsar://otherhost:8884");
         assertFalse(data1.isDisabled());
-        try {
-            checkNotNull(cache.getOwnedBundle(testBundle));
-            fail("Should have failed");
-        } catch (NullPointerException npe) {
-            // OK for not owned namespace
-        }
+        assertFalse(cache.getOwnedBundle(testBundle).isPresent());
         // case 3: this broker owns the namespace
         // delete the ephemeral node by others
         zkCache.getZooKeeper().delete(ServiceUnitZkUtils.path(testBundle), -1);
@@ -250,7 +231,7 @@ public class OwnershipCacheTest {
     public void testGetOwnedServiceUnits() throws Exception {
         OwnershipCache cache = new OwnershipCache(this.pulsar, bundleFactory, null);
         NamespaceName testNs = NamespaceName.get("pulsar/test/ns-6");
-        NamespaceBundle testBundle = bundleFactory.getFullBundle(testNs);
+        NamespaceBundle testBundle = bundleFactory.getFullBundle(testNs).join();
         // case 1: no one owns the namespace
         assertFalse(cache.getOwnerAsync(testBundle).get().isPresent());
 
@@ -285,7 +266,7 @@ public class OwnershipCacheTest {
     public void testRemoveOwnership() throws Exception {
         OwnershipCache cache = new OwnershipCache(this.pulsar, bundleFactory, null);
         NamespaceName testNs = NamespaceName.get("pulsar/test/ns-7");
-        NamespaceBundle bundle = bundleFactory.getFullBundle(testNs);
+        NamespaceBundle bundle = bundleFactory.getFullBundle(testNs).join();
         // case 1: no one owns the namespace
         assertFalse(cache.getOwnerAsync(bundle).get().isPresent());
 

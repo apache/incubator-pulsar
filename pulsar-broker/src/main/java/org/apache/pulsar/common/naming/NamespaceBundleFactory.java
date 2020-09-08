@@ -135,19 +135,6 @@ public class NamespaceBundleFactory implements ZooKeeperCacheListener<LocalPolic
         }
     }
 
-    /**
-     * checks if the local broker is the owner of the namespace bundle
-     *
-     * @param nsBundle
-     * @return
-     */
-    private boolean isOwner(NamespaceBundle nsBundle) {
-        if (pulsar != null) {
-            return pulsar.getNamespaceService().getOwnershipCache().getOwnedBundle(nsBundle) != null;
-        }
-        return false;
-    }
-
     public void invalidateBundleCache(NamespaceName namespace) {
         bundlesCache.synchronous().invalidate(namespace);
     }
@@ -160,7 +147,7 @@ public class NamespaceBundleFactory implements ZooKeeperCacheListener<LocalPolic
         return bundlesCache.synchronous().get(nsname);
     }
 
-    public Optional<NamespaceBundles> getBundlesIfPresent(NamespaceName nsname) throws Exception {
+    public Optional<NamespaceBundles> getBundlesIfPresent(NamespaceName nsname) {
         return Optional.ofNullable(bundlesCache.synchronous().getIfPresent(nsname));
     }
 
@@ -178,8 +165,8 @@ public class NamespaceBundleFactory implements ZooKeeperCacheListener<LocalPolic
         return getBundle(NamespaceName.get(namespace), hashRange);
     }
 
-    public NamespaceBundle getFullBundle(NamespaceName fqnn) throws Exception {
-        return bundlesCache.synchronous().get(fqnn).getFullBundle();
+    public CompletableFuture<NamespaceBundle> getFullBundle(NamespaceName fqnn) {
+        return bundlesCache.get(fqnn).thenApply(NamespaceBundles::getFullBundle);
     }
 
     public long getLongHashCode(String name) {
