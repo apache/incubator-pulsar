@@ -75,6 +75,10 @@ public class FunctionConfigUtilsTest {
         producerConfig.setMaxPendingMessages(100);
         producerConfig.setMaxPendingMessagesAcrossPartitions(1000);
         producerConfig.setUseThreadLocalProducers(true);
+        producerConfig.setDisableBatching(false);
+        producerConfig.setBatchingMaxBytes(45678);
+        producerConfig.setBatchingMaxMessages(12345);
+        producerConfig.setBatchingMaxPublishDelay(100);
         functionConfig.setProducerConfig(producerConfig);
         Function.FunctionDetails functionDetails = FunctionConfigUtils.convert(functionConfig, null);
         FunctionConfig convertedConfig = FunctionConfigUtils.convertFromDetails(functionDetails);
@@ -115,6 +119,10 @@ public class FunctionConfigUtilsTest {
         producerConfig.setMaxPendingMessages(100);
         producerConfig.setMaxPendingMessagesAcrossPartitions(1000);
         producerConfig.setUseThreadLocalProducers(true);
+        producerConfig.setDisableBatching(false);
+        producerConfig.setBatchingMaxBytes(45678);
+        producerConfig.setBatchingMaxMessages(12345);
+        producerConfig.setBatchingMaxPublishDelay(100);
         functionConfig.setProducerConfig(producerConfig);
         Function.FunctionDetails functionDetails = FunctionConfigUtils.convert(functionConfig, null);
         FunctionConfig convertedConfig = FunctionConfigUtils.convertFromDetails(functionDetails);
