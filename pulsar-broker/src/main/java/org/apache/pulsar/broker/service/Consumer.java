@@ -94,6 +94,8 @@ public class Consumer {
     private long lastAckedTimestamp;
     private Rate chuckedMessageRate;
 
+    private final ConsumerFilter consumerFilter;
+
     // Represents how many messages we can safely send to the consumer without
     // overflowing its receiving queue. The consumer will use Flow commands to
     // increase its availability
@@ -180,6 +182,8 @@ public class Consumer {
             // We don't need to keep track of pending acks if the subscription is not shared
             this.pendingAcks = null;
         }
+
+        consumerFilter = ConsumerFilterFactory.createConsumerFilter(this.cnx.getBrokerService().getPulsar().getConfiguration());
     }
 
     public SubType subType() {
@@ -202,11 +206,11 @@ public class Consumer {
 
         if (log.isDebugEnabled()) {
             log.debug("notify consumer {} - that [{}] for subscription {} has new active consumer : {}",
-                consumerId, topicName, subscription.getName(), activeConsumer);
+                    consumerId, topicName, subscription.getName(), activeConsumer);
         }
         cnx.ctx().writeAndFlush(
-            Commands.newActiveConsumerChange(consumerId, this == activeConsumer),
-            cnx.ctx().voidPromise());
+                Commands.newActiveConsumerChange(consumerId, this == activeConsumer),
+                cnx.ctx().voidPromise());
     }
 
     public boolean readCompacted() {
@@ -219,10 +223,10 @@ public class Consumer {
      *
      * @return a SendMessageInfo object that contains the detail of what was sent to consumer
      */
-
     public ChannelPromise sendMessages(final List<Entry> entries, EntryBatchSizes batchSizes, EntryBatchIndexesAcks batchIndexesAcks,
                int totalMessages, long totalBytes, long totalChunkedMessages, RedeliveryTracker redeliveryTracker) {
         this.lastConsumedTimestamp = System.currentTimeMillis();
+
         final ChannelHandlerContext ctx = cnx.ctx();
         final ChannelPromise writePromise = ctx.newPromise();
 
@@ -249,6 +253,7 @@ public class Consumer {
                     int batchSize = batchSizes.getBatchSize(i);
                     pendingAcks.put(entry.getLedgerId(), entry.getEntryId(), batchSize, 0);
                 }
+
             }
         }
 
@@ -288,10 +293,10 @@ public class Consumer {
 
                 MessageIdData.Builder messageIdBuilder = MessageIdData.newBuilder();
                 MessageIdData messageId = messageIdBuilder
-                    .setLedgerId(entry.getLedgerId())
-                    .setEntryId(entry.getEntryId())
-                    .setPartition(partitionIdx)
-                    .build();
+                        .setLedgerId(entry.getLedgerId())
+                        .setEntryId(entry.getEntryId())
+                        .setPartition(partitionIdx)
+                        .build();
 
                 ByteBuf metadataAndPayload = entry.getDataBuffer();
                 // increment ref-count of data and release at the end of process: so, we can get chance to call entry.release
@@ -391,6 +396,7 @@ public class Consumer {
     CompletableFuture<Void> messageAcked(CommandAck ack) {
         this.lastAckedTimestamp = System.currentTimeMillis();
         Map<String,Long> properties = Collections.emptyMap();
+
         if (ack.getPropertiesCount() > 0) {
             properties = ack.getPropertiesList().stream()
                 .collect(Collectors.toMap(PulsarApi.KeyLongValue::getKey,
@@ -598,8 +604,7 @@ public class Consumer {
      * Triggers dispatcher to dispatch {@code blockedPermits} number of messages and adds same number of permits to
      * {@code messagePermits} as it maintains count of actual dispatched message-permits.
      *
-     * @param consumer:
-     *            Consumer whose blockedPermits needs to be dispatched
+     * @param consumer: Consumer whose blockedPermits needs to be dispatched
      */
     void flowConsumerBlockedPermits(Consumer consumer) {
         int additionalNumberOfPermits = PERMITS_RECEIVED_WHILE_CONSUMER_BLOCKED_UPDATER.getAndSet(consumer, 0);
@@ -717,9 +722,8 @@ public class Consumer {
     /**
      * first try to remove ack-position from the current_consumer's pendingAcks.
      * if ack-message doesn't present into current_consumer's pendingAcks
-     *  a. try to remove from other connected subscribed consumers (It happens when client
+     * a. try to remove from other connected subscribed consumers (It happens when client
      * tries to acknowledge message through different consumer under the same subscription)
-     *
      *
      * @param position
      */
@@ -832,6 +836,18 @@ public class Consumer {
 
     public Subscription getSubscription() {
         return subscription;
+    }
+
+    public Map<String, String> getMetadata() {
+        return metadata;
+    }
+
+    public void initFiltering() {
+        consumerFilter.initFiltering(this.getMetadata());
+    }
+
+    public ConsumerFilter getConsumerFilter() {
+        return consumerFilter;
     }
 
     private int addAndGetUnAckedMsgs(Consumer consumer, int ackedMessages) {
