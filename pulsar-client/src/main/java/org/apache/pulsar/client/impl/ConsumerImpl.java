@@ -79,6 +79,7 @@ import org.apache.pulsar.client.api.transaction.TxnID;
 import org.apache.pulsar.client.impl.conf.ConsumerConfigurationData;
 import org.apache.pulsar.client.impl.crypto.MessageCryptoBc;
 import org.apache.pulsar.client.impl.transaction.TransactionImpl;
+import org.apache.pulsar.client.util.MessageIdUtils;
 import org.apache.pulsar.client.util.RetryMessageUtil;
 import org.apache.pulsar.common.api.EncryptionContext;
 import org.apache.pulsar.common.api.EncryptionContext.EncryptionKey;
@@ -1901,11 +1902,17 @@ public class ConsumerImpl<T> extends ConsumerBase<T> implements ConnectionHandle
 
         log.info("[{}][{}] Seek subscription to publish time {}", topic, subscription, timestamp);
 
-        cnx.sendRequestWithId(seek, requestId).thenRun(() -> {
+        cnx.sendSeekRequestWithId(seek, requestId).thenAccept((seekResponse) -> {
             log.info("[{}][{}] Successfully reset subscription to publish time {}", topic, subscription, timestamp);
             acknowledgmentsGroupingTracker.flushAndClean();
 
-            seekMessageId = new BatchMessageIdImpl((MessageIdImpl) MessageId.earliest);
+            MessageIdData messageIdData = seekResponse.getMessageIdData();
+            seekMessageId = new BatchMessageIdImpl(new MessageIdImpl(seekResponse.getMessageIdData().getLedgerId(),
+                    seekResponse.getMessageIdData().getEntryId(), seekResponse.getMessageIdData().getPartition()));
+            startMessageId = seekMessageId;
+            log.info("[{}][{}] Successfully reset subscription to publish time {} and position {}",
+                    topic, subscription, timestamp, seekMessageId);
+
             duringSeek.set(true);
             lastDequeuedMessageId = MessageId.earliest;
 
@@ -1962,11 +1969,17 @@ public class ConsumerImpl<T> extends ConsumerBase<T> implements ConnectionHandle
 
         log.info("[{}][{}] Seek subscription to message id {}", topic, subscription, messageId);
 
-        cnx.sendRequestWithId(seek, requestId).thenRun(() -> {
+        cnx.sendSeekRequestWithId(seek, requestId).thenAccept((seekResponse) -> {
             log.info("[{}][{}] Successfully reset subscription to message id {}", topic, subscription, messageId);
             acknowledgmentsGroupingTracker.flushAndClean();
 
-            seekMessageId = new BatchMessageIdImpl((MessageIdImpl) messageId);
+            MessageIdData messageIdData = seekResponse.getMessageIdData();
+            int batchIndex = MessageIdUtils.getBathIndexFromMessageIdData(messageIdData);
+            seekMessageId = new BatchMessageIdImpl(messageIdData.getLedgerId(), messageIdData.getEntryId(),
+                    messageIdData.getPartition(), batchIndex);
+            log.info("[{}][{}] Successfully reset subscription to position {}",
+                    topic, subscription, seekMessageId);
+
             duringSeek.set(true);
             lastDequeuedMessageId = MessageId.earliest;
 
@@ -2125,7 +2138,7 @@ public class ConsumerImpl<T> extends ConsumerBase<T> implements ConnectionHandle
                             result.getEntryId(), result.getPartition()));
                 } else {
                     future.complete(new BatchMessageIdImpl(result.getLedgerId(),
-                            result.getEntryId(), result.getPartition(), result.getBatchIndex()));
+                            result.getEntryId(), result.getPartition(), result.getBatchIndex(), result.getBatchSize()));
                 }
             }).exceptionally(e -> {
                 log.error("[{}][{}] Failed getLastMessageId command", topic, subscription);
