@@ -60,7 +60,6 @@ public interface LedgerOffloader {
             SUCCESS,
             FAIL_BUFFER_FULL,
             FAIL_SEGMENT_CLOSED,
-            FAIL_NOT_CONSECUTIVE
         }
 
         Position lastOffered();
@@ -90,6 +89,13 @@ public interface LedgerOffloader {
     // TODO: improve the user metadata in subsequent changes
     String METADATA_SOFTWARE_VERSION_KEY = "S3ManagedLedgerOffloaderSoftwareVersion";
     String METADATA_SOFTWARE_GITSHA_KEY = "S3ManagedLedgerOffloaderSoftwareGitSha";
+
+    /**
+     * Create a new instance with the same configuration as the current one.
+     */
+    default LedgerOffloader fork() {
+        throw new UnsupportedOperationException(this.getClass().toString() + " fork()");
+    }
 
     /**
      * Get offload driver name.
@@ -163,7 +169,7 @@ public interface LedgerOffloader {
     default CompletableFuture<OffloadHandle> streamingOffload(ManagedLedger ml, UUID uid, long beginLedger,
                                                               long beginEntry,
                                                               Map<String, String> driverMetadata) {
-        throw new UnsupportedOperationException();
+        throw new UnsupportedOperationException(this.getClass().toString() + " streamingOffload");
     }
 
     /**
@@ -198,12 +204,28 @@ public interface LedgerOffloader {
 
     default CompletableFuture<ReadHandle> readOffloaded(long ledgerId, MLDataFormats.OffloadContext ledgerContext,
                                                         Map<String, String> offloadDriverMetadata) {
-        throw new UnsupportedOperationException();
+        final UUID uuid = new UUID(ledgerContext.getUidMsb(), ledgerContext.getUidLsb());
+        if (ledgerContext.hasComplete() && ledgerContext.getComplete()) {
+            //ledger based offloading
+            return readOffloaded(ledgerId, uuid, offloadDriverMetadata);
+        } else {
+            final CompletableFuture<ReadHandle> result = new CompletableFuture<>();
+            result.completeExceptionally(
+                    new UnsupportedOperationException(this.getClass().toString() + " readOffloaded. " +
+                            "Ledger is not closed or is in streaming offload mode and the offloader your used"
+                            + "does not support streaming offload"));
+            return result;
+        }
     }
 
     default CompletableFuture<Void> deleteOffloaded(UUID uid,
                                                     Map<String, String> offloadDriverMetadata) {
-        throw new UnsupportedOperationException();
+        final CompletableFuture<Void> result = new CompletableFuture<>();
+        result.completeExceptionally(
+                new UnsupportedOperationException(this.getClass().toString() + " deleteOffloaded. " +
+                        "Ledger is not closed or is in streaming offload mode and the offloader your used"
+                        + "does not support streaming offload"));
+        return result;
     }
 
     /**
