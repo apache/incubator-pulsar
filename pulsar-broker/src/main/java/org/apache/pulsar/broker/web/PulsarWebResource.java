@@ -905,7 +905,7 @@ public abstract class PulsarWebResource {
 
     public void validatePoliciesReadOnlyAccess() {
         try {
-            if (clusterResources().existsAsync(AdminResource.POLICIES_READONLY_FLAG_PATH).get()) {
+            if (clusterResources().getStore().exists(AdminResource.POLICIES_READONLY_FLAG_PATH).get()) {
                 log.debug("Policies are read-only. Broker cannot do read-write operations");
                 throw new RestException(Status.FORBIDDEN, "Broker is forbidden to do read-write operations");
             }
@@ -943,7 +943,7 @@ public abstract class PulsarWebResource {
                             // created
                             // with the v1 admin format (prop/cluster/ns) and then deleted, so no need to
                             // add it to the list
-                            namespaceResources().getAsync(path(POLICIES, namespace)).thenApply(data -> {
+                            namespaceResources().getAsync(namespace).thenApply(data -> {
                                 if (data.isPresent()) {
                                     checkNs.completeExceptionally(new RestException(Status.PRECONDITION_FAILED,
                                             "Tenant has active namespace"));
@@ -978,7 +978,7 @@ public abstract class PulsarWebResource {
 
     protected void validateClusterExists(String cluster) {
         try {
-            if (!clusterResources().get(path("clusters", cluster)).isPresent()) {
+            if (!clusterResources().get(cluster).isPresent()) {
                 throw new RestException(Status.PRECONDITION_FAILED, "Cluster " + cluster + " does not exist.");
             }
         } catch (Exception e) {
@@ -1056,7 +1056,7 @@ public abstract class PulsarWebResource {
                 // if the length is 0 then this is probably a leftover cluster from namespace created
                 // with the v1 admin format (prop/cluster/ns) and then deleted, so no need to add it to the list
                 try {
-                    if (namespaceResources().get(path(POLICIES, namespace)).isPresent()) {
+                    if (namespaceResources().get(namespace).isPresent()) {
                         namespaces.add(namespace);
                     }
                 } catch (MetadataStoreException.ContentDeserializationException e) {
