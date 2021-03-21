@@ -943,7 +943,7 @@ public abstract class PulsarWebResource {
                             // created
                             // with the v1 admin format (prop/cluster/ns) and then deleted, so no need to
                             // add it to the list
-                            namespaceResources().getAsync(path(POLICIES, namespace)).thenApply(data -> {
+                            namespaceResources().getAsync(namespace).thenApply(data -> {
                                 if (data.isPresent()) {
                                     checkNs.completeExceptionally(new RestException(Status.PRECONDITION_FAILED,
                                             "Tenant has active namespace"));
@@ -1056,7 +1056,7 @@ public abstract class PulsarWebResource {
                 // if the length is 0 then this is probably a leftover cluster from namespace created
                 // with the v1 admin format (prop/cluster/ns) and then deleted, so no need to add it to the list
                 try {
-                    if (namespaceResources().get(path(POLICIES, namespace)).isPresent()) {
+                    if (namespaceResources().get(namespace).isPresent()) {
                         namespaces.add(namespace);
                     }
                 } catch (MetadataStoreException.ContentDeserializationException e) {
@@ -1081,7 +1081,7 @@ public abstract class PulsarWebResource {
         log.debug("Deleting " + tree.size() + " subnodes ");
         for (int i = tree.size() - 1; i >= 0; --i) {
             // Delete the leaves first and eventually get rid of the root
-            resources.delete(tree.get(i));
+            resources.delete(tree.get(i), false);
         }
     }
 
@@ -1096,7 +1096,15 @@ public abstract class PulsarWebResource {
             if (node == null) {
                 break;
             }
-            List<String> children = resources.getChildren(node);
+            List<String> children;
+            try {
+                children = resources.getStore().getChildren(node).get();
+            } catch (ExecutionException e) {
+                throw (e.getCause() instanceof MetadataStoreException) ? (MetadataStoreException) e.getCause()
+                        : new MetadataStoreException(e.getCause());
+            } catch (Exception e) {
+                throw new MetadataStoreException("Failed to get children for " + node, e);
+            }
             for (final String child : children) {
                 final String childPath = node + "/" + child;
                 queue.add(childPath);

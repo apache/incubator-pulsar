@@ -20,6 +20,7 @@ package org.apache.pulsar.broker.web;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.concurrent.ExecutionException;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -54,7 +55,7 @@ public class RestException extends WebApplicationException {
     }
 
     public RestException(Throwable t) {
-        super(getResponse(t));
+        super(getResponse(t instanceof ExecutionException ? t.getCause() : t));
     }
 
     public RestException(Response.Status status, Throwable t) {
