@@ -401,12 +401,12 @@ public class PersistentTopicsBase extends AdminResource {
      * @param numPartitions
      */
     protected void internalUpdatePartitionedTopic(int numPartitions,
-                                                  boolean updateLocalTopicOnly, boolean authoritative) {
+                                                  boolean updateLocalTopicOnly, boolean authoritative,
+                                                  boolean force) {
         validateTopicOwnership(topicName, authoritative);
         validateTopicPolicyOperation(topicName, PolicyName.PARTITION, PolicyOperation.WRITE);
-
         // Only do the validation if it's the first hop.
-        if (!updateLocalTopicOnly) {
+        if (!updateLocalTopicOnly && !force) {
             validatePartitionTopicUpdate(topicName.getLocalName(), numPartitions);
         }
         final int maxPartitions = pulsar().getConfig().getMaxNumPartitionsPerPartitionedTopic();
@@ -470,7 +470,8 @@ public class PersistentTopicsBase extends AdminResource {
         }
         try {
             tryCreatePartitionsAsync(numPartitions).get(DEFAULT_OPERATION_TIMEOUT_SEC, TimeUnit.SECONDS);
-            updatePartitionedTopic(topicName, numPartitions).get(DEFAULT_OPERATION_TIMEOUT_SEC, TimeUnit.SECONDS);
+            updatePartitionedTopic(topicName, numPartitions, force).get(DEFAULT_OPERATION_TIMEOUT_SEC,
+                    TimeUnit.SECONDS);
         } catch (Exception e) {
             if (e.getCause() instanceof RestException) {
                 throw (RestException) e.getCause();
@@ -534,7 +535,7 @@ public class PersistentTopicsBase extends AdminResource {
             }
             results.add(pulsar().getBrokerService().getClusterPulsarAdmin(cluster).topics()
                     .updatePartitionedTopicAsync(topicName.toString(),
-                            numPartitions, true));
+                            numPartitions, true, false));
         });
         return FutureUtil.waitForAll(results);
     }
@@ -3435,7 +3436,7 @@ public class PersistentTopicsBase extends AdminResource {
         }
     }
 
-    private CompletableFuture<Void> updatePartitionedTopic(TopicName topicName, int numPartitions) {
+    private CompletableFuture<Void> updatePartitionedTopic(TopicName topicName, int numPartitions, boolean force) {
         final String path = ZkAdminPaths.partitionedTopicPath(topicName);
 
         CompletableFuture<Void> updatePartition = new CompletableFuture<>();
@@ -3448,6 +3449,10 @@ public class PersistentTopicsBase extends AdminResource {
                 updatePartition.completeExceptionally(e);
             }
         }).exceptionally(ex -> {
+            if (force && ex.getCause() instanceof PulsarAdminException.ConflictException) {
+                updatePartition.complete(null);
+                return null;
+            }
             updatePartition.completeExceptionally(ex);
             return null;
         });
