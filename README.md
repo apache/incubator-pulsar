@@ -90,6 +90,9 @@ Requirements:
    * When building Pulsar on a higher version (higher than Java 8), the resulting artifacts are not compatible with Java 8 runtime because of some issues, such as [issue 8445](https://github.com/apache/pulsar/issues/8445).
  * Maven 3.6.1+
 
+> Note: this project includes a [Maven Wrapper](https://github.com/takari/maven-wrapper) that can be used instead of a system installed Maven.
+> Use it by replacing `mvn` by `./mvnw` on Linux and `mvnw.cmd` on Windows in the commands below.
+
 Compile and install:
 
 ```bash
