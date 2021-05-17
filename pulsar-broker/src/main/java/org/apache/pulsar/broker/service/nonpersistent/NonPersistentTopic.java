@@ -441,9 +441,9 @@ public class NonPersistentTopic extends AbstractTopic implements Topic {
 
         replicators.forEach((cluster, replicator) -> futures.add(replicator.disconnect()));
         producers.values().forEach(producer -> futures.add(producer.disconnect()));
-        if (topicPublishRateLimiter instanceof AutoCloseable) {
+        if (topicPublishRateLimiter != null) {
             try {
-                ((AutoCloseable) topicPublishRateLimiter).close();
+                topicPublishRateLimiter.close();
             } catch (Exception e) {
                 log.warn("Error closing topicPublishRateLimiter for topic {}", topic, e);
             }

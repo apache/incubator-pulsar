@@ -25,7 +25,7 @@ import org.apache.pulsar.common.policies.data.PublishRate;
 import org.apache.pulsar.common.util.RateLimitFunction;
 import org.apache.pulsar.common.util.RateLimiter;
 
-public class PrecisPublishLimiter implements PublishRateLimiter, AutoCloseable {
+public class PrecisPublishLimiter implements PublishRateLimiter {
     protected volatile int publishMaxMessageRate = 0;
     protected volatile long publishMaxByteRate = 0;
     protected volatile boolean publishThrottlingEnabled = false;
