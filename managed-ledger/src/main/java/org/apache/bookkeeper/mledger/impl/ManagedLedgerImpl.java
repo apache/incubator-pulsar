@@ -37,6 +37,7 @@ import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 import io.netty.util.ReferenceCountUtil;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -2359,67 +2360,139 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
 
             advanceNonDurableCursors(ledgersToDelete);
 
-            PositionImpl currentLastConfirmedEntry = lastConfirmedEntry;
-            // Update metadata
-            for (LedgerInfo ls : ledgersToDelete) {
-                if (currentLastConfirmedEntry != null && ls.getLedgerId() == currentLastConfirmedEntry.getLedgerId()) {
-                    // this info is relevant because the lastMessageId won't be available anymore
-                    log.info("[{}] Ledger {} contains the current last confirmed entry {}, and it is going to be deleted", name,
-                            ls.getLedgerId(), currentLastConfirmedEntry);
+            deleteConsumedLedgers(promise, ledgersToDelete, offloadedLedgersToDelete);
+        }
+    }
+
+    // Need to acquire metadataMutex before calling this method.
+    private void deleteConsumedLedgers(CompletableFuture<?> promise,
+                                       List<LedgerInfo> ledgersToDelete,
+                                       List<LedgerInfo> offloadedLedgersToDelete) {
+        PositionImpl currentLastConfirmedEntry = lastConfirmedEntry;
+        // Update metadata
+        for (LedgerInfo ls : ledgersToDelete) {
+            if (currentLastConfirmedEntry != null && ls.getLedgerId() == currentLastConfirmedEntry.getLedgerId()) {
+                // this info is relevant because the lastMessageId won't be available anymore
+                log.info("[{}] Ledger {} contains the current last confirmed entry {}, and it is going to be deleted", name,
+                        ls.getLedgerId(), currentLastConfirmedEntry);
+            }
+            ledgerCache.remove(ls.getLedgerId());
+
+            ledgers.remove(ls.getLedgerId());
+            NUMBER_OF_ENTRIES_UPDATER.addAndGet(this, -ls.getEntries());
+            TOTAL_SIZE_UPDATER.addAndGet(this, -ls.getSize());
+
+            entryCache.invalidateAllEntries(ls.getLedgerId());
+        }
+        for (LedgerInfo ls : offloadedLedgersToDelete) {
+            LedgerInfo.Builder newInfoBuilder = ls.toBuilder();
+            newInfoBuilder.getOffloadContextBuilder().setBookkeeperDeleted(true);
+            String driverName = OffloadUtils.getOffloadDriverName(ls,
+                    config.getLedgerOffloader().getOffloadDriverName());
+            Map<String, String> driverMetadata = OffloadUtils.getOffloadDriverMetadata(ls,
+                    config.getLedgerOffloader().getOffloadDriverMetadata());
+            OffloadUtils.setOffloadDriverMetadata(newInfoBuilder, driverName, driverMetadata);
+            ledgers.put(ls.getLedgerId(), newInfoBuilder.build());
+        }
+
+            log.debug("[{}] Updating of ledgers list after trimming", name);
+
+        store.asyncUpdateLedgerIds(name, getManagedLedgerInfo(), ledgersStat, new MetaStoreCallback<Void>() {
+            @Override
+            public void operationComplete(Void result, Stat stat) {
+                log.info("[{}] End TrimConsumedLedgers. ledgers={} totalSize={}", name, ledgers.size(),
+                        TOTAL_SIZE_UPDATER.get(ManagedLedgerImpl.this));
+                ledgersStat = stat;
+                metadataMutex.unlock();
+                trimmerMutex.unlock();
+
+                for (LedgerInfo ls : ledgersToDelete) {
+                    log.info("[{}] Removing ledger {} - size: {}", name, ls.getLedgerId(), ls.getSize());
+                    asyncDeleteLedger(ls.getLedgerId(), ls);
                 }
-                ledgerCache.remove(ls.getLedgerId());
-
-                ledgers.remove(ls.getLedgerId());
-                NUMBER_OF_ENTRIES_UPDATER.addAndGet(this, -ls.getEntries());
-                TOTAL_SIZE_UPDATER.addAndGet(this, -ls.getSize());
-
-                entryCache.invalidateAllEntries(ls.getLedgerId());
-            }
-            for (LedgerInfo ls : offloadedLedgersToDelete) {
-                LedgerInfo.Builder newInfoBuilder = ls.toBuilder();
-                newInfoBuilder.getOffloadContextBuilder().setBookkeeperDeleted(true);
-                String driverName = OffloadUtils.getOffloadDriverName(ls,
-                        config.getLedgerOffloader().getOffloadDriverName());
-                Map<String, String> driverMetadata = OffloadUtils.getOffloadDriverMetadata(ls,
-                        config.getLedgerOffloader().getOffloadDriverMetadata());
-                OffloadUtils.setOffloadDriverMetadata(newInfoBuilder, driverName, driverMetadata);
-                ledgers.put(ls.getLedgerId(), newInfoBuilder.build());
+                for (LedgerInfo ls : offloadedLedgersToDelete) {
+                    log.info("[{}] Deleting offloaded ledger {} from bookkeeper - size: {}", name, ls.getLedgerId(),
+                            ls.getSize());
+                    asyncDeleteLedgerFromBookKeeper(ls.getLedgerId());
+                }
+                promise.complete(null);
             }
 
+            @Override
+            public void operationFailed(MetaStoreException e) {
+                log.warn("[{}] Failed to update the list of ledgers after trimming", name, e);
+                metadataMutex.unlock();
+                trimmerMutex.unlock();
+
+                promise.completeExceptionally(e);
+            }
+        });
+    }
+
+    /**
+     * Try to delete as much ledger as we can given a position.
+     * The ledger containing given position won't be deleted as a ledger can only be deleted as a whole
+     * and we're not able to just delete entries before given position.
+     * @param position The position where we want to trim ledger upon.
+     * @param dryrun   Whether it's a dryrun.
+     * @return         A {@link CompletableFuture} that'll contain list of ledger to delete or deleted, and exception
+     *                 if operation can't be completed.
+     */
+    public CompletableFuture<List<LedgerInfo>> trimConsumedLedgersForPosition(PositionImpl position, boolean dryrun) {
+        CompletableFuture<List<LedgerInfo>> future = new CompletableFuture<>();
+        System.out.println("****************");
+        if (lastConfirmedEntry.compareTo(position) < 0) {
+            future.completeExceptionally(new
+                    IllegalArgumentException("Trying to trim ledger beyond last confirmed position."));
+            return future;
+        }
+
+        // Ensure only one trimming operation is active
+        if (!trimmerMutex.tryLock()) {
+            future.completeExceptionally(new
+                    ManagedLedgerException("There's an ongoing ledger trimming operation, please try again later."));
+            return future;
+        }
+
+        CompletableFuture<Void> trimFuture = new CompletableFuture<>();
+
+        synchronized (this) {
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Updating of ledgers list after trimming", name);
+                log.debug("[{}] Start TrimConsumedLedgers. ledgers={} totalSize={}", name, ledgers.keySet(),
+                        TOTAL_SIZE_UPDATER.get(this));
+            }
+            if (STATE_UPDATER.get(this) == State.Closed) {
+                trimmerMutex.unlock();
+                future.completeExceptionally(new ManagedLedgerAlreadyClosedException("Can't trim closed ledger"));
+                return future;
             }
 
-            store.asyncUpdateLedgerIds(name, getManagedLedgerInfo(), ledgersStat, new MetaStoreCallback<Void>() {
-                @Override
-                public void operationComplete(Void result, Stat stat) {
-                    log.info("[{}] End TrimConsumedLedgers. ledgers={} totalSize={}", name, ledgers.size(),
-                            TOTAL_SIZE_UPDATER.get(ManagedLedgerImpl.this));
-                    ledgersStat = stat;
-                    metadataMutex.unlock();
-                    trimmerMutex.unlock();
+            // not including ledger for given position, prevent deletion of current ledger.
+            List<LedgerInfo> ledgersToDelete = new ArrayList<>(ledgers.headMap(position.ledgerId, false).values());
+            if (ledgersToDelete.isEmpty() || dryrun) {
+                trimmerMutex.unlock();
+                future.complete(ledgersToDelete);
+                return future;
+            }
+            // Avoid deadlocks with other operations updating the ledgers list
+            if (STATE_UPDATER.get(this) == State.CreatingLedger || !metadataMutex.tryLock()) {
+                trimmerMutex.unlock();
+                future.completeExceptionally(new
+                        ManagedLedgerException("Other operation is updating ledger metadata, please try again later."));
+                return future;
+            }
 
-                    for (LedgerInfo ls : ledgersToDelete) {
-                        log.info("[{}] Removing ledger {} - size: {}", name, ls.getLedgerId(), ls.getSize());
-                        asyncDeleteLedger(ls.getLedgerId(), ls);
-                    }
-                    for (LedgerInfo ls : offloadedLedgersToDelete) {
-                        log.info("[{}] Deleting offloaded ledger {} from bookkeeper - size: {}", name, ls.getLedgerId(),
-                                ls.getSize());
-                        asyncDeleteLedgerFromBookKeeper(ls.getLedgerId());
-                    }
-                    promise.complete(null);
-                }
+            advanceNonDurableCursors(ledgersToDelete);
 
-                @Override
-                public void operationFailed(MetaStoreException e) {
-                    log.warn("[{}] Failed to update the list of ledgers after trimming", name, e);
-                    metadataMutex.unlock();
-                    trimmerMutex.unlock();
+            deleteConsumedLedgers(trimFuture, ledgersToDelete, Collections.emptyList());
 
-                    promise.completeExceptionally(e);
-                }
+            trimFuture.thenRun(() -> {
+                future.complete(ledgersToDelete);
+            }).exceptionally((e) -> {
+                future.completeExceptionally(e);
+                return null;
             });
+            return future;
         }
     }
 

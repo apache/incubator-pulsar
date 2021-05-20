@@ -1938,6 +1938,156 @@ public class ManagedLedgerTest extends MockedBookKeeperTestCase {
     }
 
     @Test
+    public void testTrimLedgerAfterRetention() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig();
+        // unlimited retention
+        config.setRetentionSizeInMB(-1);
+        config.setRetentionTime(-1, TimeUnit.SECONDS);
+        config.setMaxEntriesPerLedger(2);
+        List<Position> positions = new ArrayList<>();
+
+        ManagedLedgerImpl ml = (ManagedLedgerImpl) factory.open("trim_after_retention_test_ledger", config);
+        // Retain entries
+        ml.openCursor("cursor");
+        for (int t = 0; t < 10; t++) {
+            positions.add(ml.addEntry("iamaverylongmessagethatshouldberetained".getBytes()));
+        }
+        ml.close();
+
+        // reopen ml
+        ml = (ManagedLedgerImpl) factory.open("trim_after_retention_test_ledger", config);
+        // 6 ledgers should be created.
+        positions.add(ml.addEntry("shortmessage".getBytes()));
+        List<LedgerInfo> list = ml.trimConsumedLedgersForPosition((PositionImpl) positions.get(4), false).get();
+        // Only 2 ledgers should be deleted
+        assertEquals(2, list.size());
+
+        list = ml.trimConsumedLedgersForPosition((PositionImpl) positions.get(positions.size() - 1), false).get();
+        // remaining 3 ledgers should be deleted (exclude current ledger)
+        assertEquals(3, list.size());
+
+        list = ml.trimConsumedLedgersForPosition((PositionImpl) positions.get(positions.size() - 1), false).get();
+        // No ledger should be deleted as it's only the current ledger left.
+        assertEquals(0, list.size());
+
+        // Wait for creation of meta data ledger to complete before closing managed ledger,
+        // else will get BadVersion exception as both operation try to write metadata to zk and could cause race condition.
+        Thread.sleep(500);
+
+        ml.close();
+    }
+
+    @Test
+    public void testTrimLedgerDryrun() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig();
+        // unlimited retention
+        config.setRetentionSizeInMB(-1);
+        config.setRetentionTime(-1, TimeUnit.SECONDS);
+        config.setMaxEntriesPerLedger(2);
+        List<Position> positions = new ArrayList<>();
+
+        ManagedLedgerImpl ml = (ManagedLedgerImpl) factory.open("trim_after_retention_test_ledger", config);
+        // Retain entries
+        ml.openCursor("cursor");
+        for (int t = 0; t < 10; t++) {
+            positions.add(ml.addEntry("iamaverylongmessagethatshouldberetained".getBytes()));
+        }
+        ml.close();
+
+        // reopen ml
+        ml = (ManagedLedgerImpl) factory.open("trim_after_retention_test_ledger", config);
+        // 6 ledgers should be created.
+        positions.add(ml.addEntry("shortmessage".getBytes()));
+        List<LedgerInfo> list = ml.trimConsumedLedgersForPosition((PositionImpl) positions.get(4), true).get();
+        // Only 2 ledgers should be pick for deletion
+        assertEquals(2, list.size());
+        // since it's dryrun, all 6 ledgers should be still there, none should be deleted
+        assertEquals(6, ml.getLedgersInfoAsList().size());
+
+        // Wait for creation of meta data ledger to complete before closing managed ledger,
+        // else will get BadVersion exception as both operation try to write metadata to zk and could cause race condition.
+        Thread.sleep(500);
+
+        ml.close();
+    }
+
+    @Test
+    public void testTrimLedgerInvalidPosition() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig();
+        // unlimited retention
+        config.setRetentionSizeInMB(-1);
+        config.setRetentionTime(-1, TimeUnit.SECONDS);
+        config.setMaxEntriesPerLedger(2);
+        List<Position> positions = new ArrayList<>();
+
+        ManagedLedgerImpl ml = (ManagedLedgerImpl) factory.open("trim_invalid_position_test_ledger", config);
+        // Retain entries
+        ml.openCursor("cursor");
+        for (int t = 0; t < 10; t++) {
+            positions.add(ml.addEntry("iamaverylongmessagethatshouldberetained".getBytes()));
+        }
+        ml.close();
+
+        // reopen ml
+        ml = (ManagedLedgerImpl) factory.open("trim_invalid_position_test_ledger", config);
+        // 6 ledgers should be created.
+        positions.add(ml.addEntry("shortmessage".getBytes()));
+        try {
+            ml.trimConsumedLedgersForPosition(PositionImpl.get(ml.lastConfirmedEntry.ledgerId,
+                    ml.lastConfirmedEntry.entryId + 1), false).get();
+            fail("Should error out");
+        } catch (Exception e) {
+            assertEquals("java.lang.IllegalArgumentException: Trying to trim ledger beyond last confirmed position.", e.getMessage());
+        } finally {
+            ml.close();
+        }
+    }
+
+    @Test
+    public void testTrimLedgerConcurrentOperation() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig();
+        // unlimited retention
+        config.setRetentionSizeInMB(-1);
+        config.setRetentionTime(-1, TimeUnit.SECONDS);
+        config.setMaxEntriesPerLedger(2);
+        List<Position> positions = new ArrayList<>();
+
+        ManagedLedgerImpl ml = (ManagedLedgerImpl) factory.open("trim_concurrent_operation_test_ledger", config);
+        MetaStore mockStore = spy(ml.getStore());
+        doAnswer(invocation -> {
+            Thread.sleep(2000);
+            return null;
+        }).when(mockStore).asyncUpdateLedgerIds(any(String.class), any(ManagedLedgerInfo.class), any(Stat.class), any(MetaStoreCallback.class));
+
+        // Retain entries
+        ml.openCursor("cursor");
+        for (int t = 0; t < 3; t++) {
+            positions.add(ml.addEntry("iamaverylongmessagethatshouldberetained".getBytes()));
+        }
+
+        // Inject mock metastore.
+        Field store = ManagedLedgerImpl.class.getDeclaredField("store");
+        store.setAccessible(true);
+        store.set(ml, mockStore);
+        CompletableFuture<List<LedgerInfo>> future1 = new CompletableFuture<>();
+        CompletableFuture<List<LedgerInfo>> future2 = new CompletableFuture<>();
+        ml.trimConsumedLedgersForPosition((PositionImpl) positions.get(2), false);
+        try {
+            // first trim operation is blocked by updating on mock metastore
+            ml.trimConsumedLedgersForPosition((PositionImpl) positions.get(2), false).get();
+            fail("Should error out");
+        } catch (Exception e) {
+            assertEquals("org.apache.bookkeeper.mledger.ManagedLedgerException: There's an ongoing ledger trimming operation, please try again later.", e.getMessage());
+        } finally {
+            ml.close();
+        }
+    }
+
+    @Test
     public void testInfiniteRetention() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig();
