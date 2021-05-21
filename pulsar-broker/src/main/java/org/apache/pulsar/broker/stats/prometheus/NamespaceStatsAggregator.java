@@ -47,7 +47,7 @@ public class NamespaceStatsAggregator {
     };
 
     public static void generate(PulsarService pulsar, boolean includeTopicMetrics, boolean includeConsumerMetrics,
-                                SimpleTextOutputStream stream) {
+           boolean includeProducerMetrics, SimpleTextOutputStream stream) {
         String cluster = pulsar.getConfiguration().getClusterName();
         AggregatedNamespaceStats namespaceStats = localNamespaceStats.get();
         TopicStats.resetTypes();
@@ -62,8 +62,9 @@ public class NamespaceStatsAggregator {
 
             bundlesMap.forEach((bundle, topicsMap) -> {
                 topicsMap.forEach((name, topic) -> {
-                    getTopicStats(topic, topicStats, includeConsumerMetrics,
-                            pulsar.getConfiguration().isExposePreciseBacklogInPrometheus());
+                    getTopicStats(topic, topicStats, includeConsumerMetrics, includeProducerMetrics,
+                            pulsar.getConfiguration().isExposePreciseBacklogInPrometheus(),
+                            pulsar.getConfiguration().isExposeSubscriptionBacklogSizeInPrometheus());
 
                     if (includeTopicMetrics) {
                         topicsCount.add(1);
@@ -85,7 +86,7 @@ public class NamespaceStatsAggregator {
     }
 
     private static void getTopicStats(Topic topic, TopicStats stats, boolean includeConsumerMetrics,
-                                      boolean getPreciseBacklog) {
+            boolean includeProducerMetrics, boolean getPreciseBacklog, boolean subscriptionBacklogSize) {
         stats.reset();
 
         if (topic instanceof PersistentTopic) {
@@ -96,7 +97,8 @@ public class NamespaceStatsAggregator {
             stats.storageSize = mlStats.getStoredMessagesSize();
             stats.backlogSize = ml.getEstimatedBacklogSize();
             stats.offloadedStorageUsed = ml.getOffloadedSize();
-            stats.backlogQuotaLimit = topic.getBacklogQuota().getLimit();
+            stats.backlogQuotaLimit = topic.getBacklogQuota().getLimitSize();
+            stats.backlogQuotaLimitTime = topic.getBacklogQuota().getLimitTime();
 
             stats.storageWriteLatencyBuckets.addAll(mlStats.getInternalAddEntryLatencyBuckets());
             stats.storageWriteLatencyBuckets.refresh();
@@ -110,11 +112,13 @@ public class NamespaceStatsAggregator {
             stats.storageReadRate = mlStats.getReadEntriesRate();
         }
 
-        org.apache.pulsar.common.policies.data.TopicStats tStatus = topic.getStats(getPreciseBacklog);
+        org.apache.pulsar.common.policies.data.TopicStats tStatus = topic.getStats(getPreciseBacklog,
+                subscriptionBacklogSize);
         stats.msgInCounter = tStatus.msgInCounter;
         stats.bytesInCounter = tStatus.bytesInCounter;
         stats.msgOutCounter = tStatus.msgOutCounter;
         stats.bytesOutCounter = tStatus.bytesOutCounter;
+        stats.averageMsgSize = tStatus.averageMsgSize;
 
         stats.producersCount = 0;
         topic.getProducers().values().forEach(producer -> {
@@ -129,6 +133,15 @@ public class NamespaceStatsAggregator {
                 stats.producersCount++;
                 stats.rateIn += producer.getStats().msgRateIn;
                 stats.throughputIn += producer.getStats().msgThroughputIn;
+
+                if (includeProducerMetrics) {
+                    AggregatedProducerStats producerStats = stats.producerStats.computeIfAbsent(
+                            producer.getProducerName(), k -> new AggregatedProducerStats());
+                    producerStats.producerId = producer.getStats().producerId;
+                    producerStats.msgRateIn = producer.getStats().msgRateIn;
+                    producerStats.msgThroughputIn = producer.getStats().msgThroughputIn;
+                    producerStats.averageMsgSize = producer.getStats().averageMsgSize;
+                }
             }
         });
 
