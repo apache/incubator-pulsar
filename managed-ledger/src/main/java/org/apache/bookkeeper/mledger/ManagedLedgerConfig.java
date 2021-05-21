@@ -484,8 +484,9 @@ public class ManagedLedgerConfig {
         return maxUnackedRangesToPersistInZk;
     }
 
-    public void setMaxUnackedRangesToPersistInZk(int maxUnackedRangesToPersistInZk) {
+    public ManagedLedgerConfig setMaxUnackedRangesToPersistInZk(int maxUnackedRangesToPersistInZk) {
         this.maxUnackedRangesToPersistInZk = maxUnackedRangesToPersistInZk;
+        return this;
     }
 
     /**

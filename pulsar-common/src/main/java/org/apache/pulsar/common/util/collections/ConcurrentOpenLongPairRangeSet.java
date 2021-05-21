@@ -19,16 +19,21 @@
 package org.apache.pulsar.common.util.collections;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import com.google.common.collect.BoundType;
-import com.google.common.collect.Range;
+import static java.util.BitSet.valueOf;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import com.google.common.base.Objects;
+import com.google.common.collect.BoundType;
+import com.google.common.collect.Range;
 
 /**
  * A Concurrent set comprising zero or more ranges of type {@link LongPair}. This can be alternative of
@@ -379,4 +384,39 @@ public class ConcurrentOpenLongPairRangeSet<T extends Comparable<T>> implements 
         return this.threadSafe ? new ConcurrentBitSet(bitSetSize) : new BitSet(bitSetSize);
     }
 
+    @Override
+    public Map<Long, long[]> toRanges(int maxRanges) {
+        Map<Long, long[]> internalBitSetMap = new HashMap<>();
+        AtomicInteger rangeCount = new AtomicInteger();
+        rangeBitSetMap.forEach((id, bmap) -> {
+            if (rangeCount.getAndAdd(bmap.cardinality()) > maxRanges) {
+                return;
+            }
+            internalBitSetMap.put(id, bmap.toLongArray());
+        });
+        return internalBitSetMap;
+    }
+
+    @Override
+    public void build(Map<Long, long[]> internalRange) {
+        internalRange.forEach((id, ranges) -> rangeBitSetMap.put(id, valueOf(ranges)));
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(rangeBitSetMap);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (!(obj instanceof ConcurrentOpenLongPairRangeSet)) {
+            return false;
+        }
+        if (this == obj) {
+            return true;
+        }
+        @SuppressWarnings("rawtypes")
+        ConcurrentOpenLongPairRangeSet set = (ConcurrentOpenLongPairRangeSet) obj;
+        return this.rangeBitSetMap.equals(set.rangeBitSetMap);
+    }
 }

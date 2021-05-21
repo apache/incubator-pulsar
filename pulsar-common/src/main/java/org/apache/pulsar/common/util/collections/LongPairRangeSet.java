@@ -25,8 +25,11 @@ import com.google.common.collect.RangeSet;
 import com.google.common.collect.TreeRangeSet;
 import lombok.EqualsAndHashCode;
 
+import java.io.IOException;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -124,6 +127,26 @@ public interface LongPairRangeSet<T extends Comparable<T>> {
      * @return last biggest range into the set
      */
     Range<T> lastRange();
+
+    /**
+     * Retrieve internal-ranges {@link LongPairRangeSet} to byte[].
+     * 
+     * @param maxRanges
+     *            to retrieve limited ranges.
+     * @return
+     */
+    default Map<Long, long[]> toRanges(int maxRanges) {
+        return Collections.emptyMap();
+    }
+
+    /**
+     * Build {@link LongPairRangeSet} using internal ranges returned by {@link #toRanges(int)} .
+     * 
+     * @param ranges
+     */
+    default void build(Map<Long, long[]> ranges) {
+        throw new UnsupportedOperationException();
+    }
 
     /**
      * Represents a function that accepts two long arguments and produces a result.

@@ -51,6 +51,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerFactoryConfig;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
 import org.apache.pulsar.common.policies.data.PersistentOfflineTopicStats;
+import org.apache.pulsar.common.util.collections.LongPairRangeSet;
 import org.testng.annotations.Test;
 
 public class ManagedLedgerBkTest extends BookKeeperClusterTestCase {
@@ -542,6 +543,43 @@ public class ManagedLedgerBkTest extends BookKeeperClusterTestCase {
         factory.shutdown();
     }
 
+    /**
+     * This test validates that cursor serializes and deserializes individual-ack list from the bk-ledger.
+     * 
+     * @throws Exception
+     */
+    @Test
+    public void testUnackmessagesAndRecovery() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, zkc);
 
+        ManagedLedgerConfig config = new ManagedLedgerConfig().setEnsembleSize(1).setWriteQuorumSize(1)
+                .setAckQuorumSize(1).setMetadataEnsembleSize(1).setMetadataWriteQuorumSize(1)
+                .setMaxUnackedRangesToPersistInZk(1).setMaxEntriesPerLedger(5).setMetadataAckQuorumSize(1);
+        ManagedLedger ledger = factory.open("my_test_unack_messages", config);
+        ManagedCursorImpl cursor = (ManagedCursorImpl) ledger.openCursor("c1");
 
+        int totalEntries = 100;
+        for (int i = 0; i < totalEntries; i++) {
+            Position p = ledger.addEntry("entry".getBytes());
+            if (i % 2 == 0) {
+                cursor.delete(p);
+            }
+        }
+
+        LongPairRangeSet<PositionImpl> unackMessagesBefore = cursor.getIndividuallyDeletedMessagesSet();
+
+        // close cursor
+        cursor.close();
+        ledger.close();
+
+        // open and recover cursor
+        ledger = factory.open("my_test_unack_messages", config);
+        cursor = (ManagedCursorImpl) ledger.openCursor("c1");
+
+        LongPairRangeSet<PositionImpl> unackMessagesAfter = cursor.getIndividuallyDeletedMessagesSet();
+        assertTrue(unackMessagesBefore.equals(unackMessagesAfter));
+
+        ledger.close();
+        factory.shutdown();
+    }
 }
