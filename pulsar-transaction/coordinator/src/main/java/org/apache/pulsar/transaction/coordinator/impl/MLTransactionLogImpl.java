@@ -30,6 +30,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
 import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.EntryCacheCounter;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
@@ -202,7 +203,7 @@ public class MLTransactionLogImpl implements TransactionLog {
                 && ((ManagedLedgerImpl) managedLedger).ledgerExists(position.getLedgerId())) {
             ((ManagedLedgerImpl) this.managedLedger).asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
                 @Override
-                public void readEntryComplete(Entry entry, Object ctx) {
+                public void readEntryComplete(Entry entry, Object ctx, EntryCacheCounter entryCacheCounter) {
                     TransactionMetadataEntry lastConfirmEntry = new TransactionMetadataEntry();
                     ByteBuf buffer = entry.getDataBuffer();
                     lastConfirmEntry.parseFrom(buffer, buffer.readableBytes());
@@ -248,7 +249,7 @@ public class MLTransactionLogImpl implements TransactionLog {
         }
 
         @Override
-        public void readEntriesComplete(List<Entry> entries, Object ctx) {
+        public void readEntriesComplete(List<Entry> entries, Object ctx, EntryCacheCounter entryCacheCounter) {
             entryQueue.fill(new MessagePassingQueue.Supplier<Entry>() {
                 private int i = 0;
                 @Override

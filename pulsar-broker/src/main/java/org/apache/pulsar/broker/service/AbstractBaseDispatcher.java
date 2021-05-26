@@ -24,6 +24,7 @@ import io.netty.buffer.ByteBuf;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
@@ -46,10 +47,20 @@ import org.apache.pulsar.common.protocol.Markers;
 public abstract class AbstractBaseDispatcher implements Dispatcher {
 
     protected final Subscription subscription;
+    private long lastStatTimestamp = System.nanoTime();
+    protected DispatcherMXBeanImpl bean;
 
     protected AbstractBaseDispatcher(Subscription subscription) {
         this.subscription = subscription;
+        this.bean = new DispatcherMXBeanImpl(this);
     }
+
+    public synchronized void refreshStats() {
+        long now = System.nanoTime();
+        long period = now - lastStatTimestamp;
+        bean.refreshStats(period, TimeUnit.NANOSECONDS);
+    }
+
 
     /**
      * Update Entries with the metadata of each entry.
@@ -240,4 +251,9 @@ public abstract class AbstractBaseDispatcher implements Dispatcher {
     protected void addMessageToReplay(long ledgerId, long entryId) {
         // No-op
     }
+
+    public DispatcherMXBeanImpl getBean() {
+        return bean;
+    }
+
 }

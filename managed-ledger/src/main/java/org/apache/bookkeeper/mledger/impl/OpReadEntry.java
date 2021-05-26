@@ -43,6 +43,7 @@ class OpReadEntry implements ReadEntriesCallback {
     // Results
     private List<Entry> entries;
     private PositionImpl nextReadPosition;
+    private EntryCacheCounter entryCacheCounter;
     PositionImpl maxPosition;
 
     public static OpReadEntry create(ManagedCursorImpl cursor, PositionImpl readPositionRef, int count,
@@ -59,11 +60,13 @@ class OpReadEntry implements ReadEntriesCallback {
         op.maxPosition = maxPosition;
         op.ctx = ctx;
         op.nextReadPosition = PositionImpl.get(op.readPosition);
+        op.entryCacheCounter = EntryCacheCounter.EntryCacheCounterBuilder.getBuilder().build();
         return op;
     }
 
     @Override
-    public void readEntriesComplete(List<Entry> returnedEntries, Object ctx) {
+    public void readEntriesComplete(List<Entry> returnedEntries, Object ctx, EntryCacheCounter entryCacheCounter) {
+        this.entryCacheCounter.add(entryCacheCounter);
         // Filter the returned entries for individual deleted messages
         int entriesCount = returnedEntries.size();
         long entriesSize = 0;
@@ -94,7 +97,7 @@ class OpReadEntry implements ReadEntriesCallback {
         if (!entries.isEmpty()) {
             // There were already some entries that were read before, we can return them
             cursor.ledger.getExecutor().execute(safeRun(() -> {
-                callback.readEntriesComplete(entries, ctx);
+                callback.readEntriesComplete(entries, ctx, entryCacheCounter);
                 recycle();
             }));
         } else if (cursor.config.isAutoSkipNonRecoverableData() && exception instanceof NonRecoverableLedgerException) {
@@ -153,7 +156,7 @@ class OpReadEntry implements ReadEntriesCallback {
 
             } finally {
                 cursor.ledger.getExecutor().executeOrdered(cursor.ledger.getName(), safeRun(() -> {
-                    callback.readEntriesComplete(entries, ctx);
+                    callback.readEntriesComplete(entries, ctx, entryCacheCounter);
                     recycle();
                 }));
             }
@@ -188,6 +191,7 @@ class OpReadEntry implements ReadEntriesCallback {
         ctx = null;
         entries = null;
         nextReadPosition = null;
+        entryCacheCounter = null;
         maxPosition = null;
         recyclerHandle.recycle(this);
     }

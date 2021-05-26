@@ -42,6 +42,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerException.ConcurrentFindCursorPositionException;
 import org.apache.bookkeeper.mledger.ManagedLedgerException.InvalidCursorPositionException;
 import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.EntryCacheCounter;
 import org.apache.bookkeeper.mledger.impl.ManagedCursorImpl;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
@@ -420,7 +421,7 @@ public class PersistentSubscription implements Subscription {
                     && nextPosition.compareTo((PositionImpl) managedLedger.getLastConfirmedEntry()) <= 0) {
                 managedLedger.asyncReadEntry(nextPosition, new ReadEntryCallback() {
                     @Override
-                    public void readEntryComplete(Entry entry, Object ctx) {
+                    public void readEntryComplete(Entry entry, Object ctx, EntryCacheCounter entryCacheCounter) {
                         try {
                             MessageMetadata messageMetadata = Commands.parseMessageMetadata(entry.getDataBuffer());
                             isDeleteTransactionMarkerInProcess = false;
@@ -747,7 +748,7 @@ public class PersistentSubscription implements Subscription {
             }
 
             @Override
-            public void readEntryComplete(Entry entry, Object ctx) {
+            public void readEntryComplete(Entry entry, Object ctx, EntryCacheCounter entryCacheCounter) {
                 future.complete(entry);
             }
         }, null);

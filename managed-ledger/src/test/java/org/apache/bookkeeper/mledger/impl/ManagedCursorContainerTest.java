@@ -79,13 +79,13 @@ public class ManagedCursorContainerTest {
         @Override
         public void asyncReadEntries(int numberOfEntriesToRead, ReadEntriesCallback callback, Object ctx,
                                      PositionImpl maxPosition) {
-            callback.readEntriesComplete(null, ctx);
+            callback.readEntriesComplete(null, ctx, EntryCacheCounter.EntryCacheCounterBuilder.getBuilder().build());
         }
 
         @Override
         public void asyncReadEntries(int numberOfEntriesToRead, long maxSizeBytes, ReadEntriesCallback callback,
                                      Object ctx, PositionImpl maxPosition) {
-            callback.readEntriesComplete(null, ctx);
+            callback.readEntriesComplete(null, ctx, EntryCacheCounter.EntryCacheCounterBuilder.getBuilder().build());
         }
 
         @Override

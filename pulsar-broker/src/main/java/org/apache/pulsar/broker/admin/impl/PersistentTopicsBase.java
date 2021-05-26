@@ -58,6 +58,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerException.MetadataNotFoundException;
 import org.apache.bookkeeper.mledger.ManagedLedgerInfo;
+import org.apache.bookkeeper.mledger.impl.EntryCacheCounter;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerFactoryImpl;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerOfflineBacklog;
@@ -2226,7 +2227,7 @@ public class PersistentTopicsBase extends AdminResource {
                     }
 
                     @Override
-                    public void readEntryComplete(Entry entry, Object ctx) {
+                    public void readEntryComplete(Entry entry, Object ctx, EntryCacheCounter entryCacheCounter) {
                         try {
                             try {
                                 if (entry == null) {
@@ -2312,7 +2313,7 @@ public class PersistentTopicsBase extends AdminResource {
                 }
 
                 @Override
-                public void readEntryComplete(Entry entry, Object ctx) {
+                public void readEntryComplete(Entry entry, Object ctx, EntryCacheCounter entryCacheCounter) {
                     try {
                         asyncResponse.resume(generateResponseWithEntry(entry));
                     } catch (IOException exception) {
@@ -2415,7 +2416,7 @@ public class PersistentTopicsBase extends AdminResource {
             PositionImpl readPosition = topic.getPositionAfterN(startPosition, messageToSkip);
             topic.asyncReadEntry(readPosition, new AsyncCallbacks.ReadEntryCallback() {
                 @Override
-                public void readEntryComplete(Entry entry, Object ctx) {
+                public void readEntryComplete(Entry entry, Object ctx, EntryCacheCounter entryCacheCounter) {
                     future.complete(entry);
                 }
 

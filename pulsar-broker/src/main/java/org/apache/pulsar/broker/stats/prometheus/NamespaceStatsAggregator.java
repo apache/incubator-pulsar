@@ -23,7 +23,12 @@ import java.util.concurrent.atomic.LongAdder;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerMBeanImpl;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.broker.service.AbstractBaseDispatcher;
+import org.apache.pulsar.broker.service.Dispatcher;
+import org.apache.pulsar.broker.service.DispatcherMXBeanImpl;
+import org.apache.pulsar.broker.service.Subscription;
 import org.apache.pulsar.broker.service.Topic;
+import org.apache.pulsar.broker.service.persistent.PersistentSubscription;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.policies.data.ConsumerStats;
 import org.apache.pulsar.common.policies.data.ReplicatorStats;
@@ -156,6 +161,19 @@ public class NamespaceStatsAggregator {
             subsStats.msgRateExpired = subscriptionStats.msgRateExpired;
             subsStats.totalMsgExpired = subscriptionStats.totalMsgExpired;
             subsStats.msgBacklogNoDelayed = subsStats.msgBacklog - subsStats.msgDelayed;
+
+            Subscription subscription = topic.getSubscription(subName);
+            if (subscription instanceof PersistentSubscription) {
+                Dispatcher dispatcher = subscription.getDispatcher();
+                if (dispatcher instanceof AbstractBaseDispatcher) {
+                    DispatcherMXBeanImpl bean = ((AbstractBaseDispatcher) dispatcher).getBean();
+                    subsStats.cacheHitsRate = bean.getCacheHitsRate();
+                    subsStats.cacheHitsThroughput = bean.getCacheHitsThroughput();
+                    subsStats.cacheMissesRate = bean.getCacheMissesRate();
+                    subsStats.cacheMissesThroughput = bean.getCacheMissesThroughput();
+                }
+            }
+
             subsStats.lastExpireTimestamp = subscriptionStats.lastExpireTimestamp;
             subsStats.lastAckedTimestamp = subscriptionStats.lastAckedTimestamp;
             subsStats.lastConsumedFlowTimestamp = subscriptionStats.lastConsumedFlowTimestamp;

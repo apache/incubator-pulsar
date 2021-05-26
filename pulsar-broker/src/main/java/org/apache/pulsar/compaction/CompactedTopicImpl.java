@@ -96,7 +96,7 @@ public class CompactedTopicImpl implements CompactedTopic {
                             // the cursor just needs to be set to the compaction horizon
                             if (startPoint == COMPACT_LEDGER_EMPTY) {
                                 cursor.seek(compactionHorizon.getNext());
-                                callback.readEntriesComplete(Collections.emptyList(), ctx);
+                                callback.readEntriesComplete(Collections.emptyList(), ctx, null);
                                 return CompletableFuture.completedFuture(null);
                             }
                             if (startPoint == NEWER_THAN_COMPACTED && compactionHorizon.compareTo(cursorPosition) < 0) {
@@ -108,20 +108,20 @@ public class CompactedTopicImpl implements CompactedTopic {
                                                          startPoint + numberOfEntriesToRead);
                                 if (startPoint == NEWER_THAN_COMPACTED) {
                                     cursor.seek(compactionHorizon.getNext());
-                                    callback.readEntriesComplete(Collections.emptyList(), ctx);
+                                    callback.readEntriesComplete(Collections.emptyList(), ctx, null);
                                 }
                                 return readEntries(context.ledger, startPoint, endPoint)
                                     .thenAccept((entries) -> {
                                         Entry lastEntry = entries.get(entries.size() - 1);
                                         cursor.seek(lastEntry.getPosition().getNext());
-                                        callback.readEntriesComplete(entries, ctx);
+                                        callback.readEntriesComplete(entries, ctx, null);
                                     });
                             }
                         }))
                     .exceptionally((exception) -> {
                         if (exception.getCause() instanceof NoSuchElementException) {
                             cursor.seek(compactionHorizon.getNext());
-                            callback.readEntriesComplete(Collections.emptyList(), ctx);
+                            callback.readEntriesComplete(Collections.emptyList(), ctx, null);
                         } else {
                             callback.readEntriesFailed(new ManagedLedgerException(exception), ctx);
                         }

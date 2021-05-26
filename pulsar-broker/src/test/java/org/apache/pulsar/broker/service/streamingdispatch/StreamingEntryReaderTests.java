@@ -197,7 +197,7 @@ public class StreamingEntryReaderTests extends MockedBookKeeperTestCase {
                 AsyncCallbacks.ReadEntryCallback cb = invocationOnMock.getArgument(1, AsyncCallbacks.ReadEntryCallback.class);
                 executor.schedule(() -> {
                     cb.readEntryComplete(EntryImpl.create(position.getLedgerId(), position.getEntryId(), "mmmmmmmmmmessage-2".getBytes()),
-                            invocationOnMock.getArgument(2));
+                            invocationOnMock.getArgument(2), null);
                 }, 200, TimeUnit.MILLISECONDS);
                 return null;
             }
@@ -310,7 +310,7 @@ public class StreamingEntryReaderTests extends MockedBookKeeperTestCase {
                 if (c < 5) {
                     cb.readEntryComplete(EntryImpl.create(position.getLedgerId(), position.getEntryId(),
                             messages.get(position).getBytes()),
-                            invocationOnMock.getArgument(2));
+                            invocationOnMock.getArgument(2), null);
                 }
                 return null;
             }
@@ -377,7 +377,7 @@ public class StreamingEntryReaderTests extends MockedBookKeeperTestCase {
                 } else {
                     cb.readEntryComplete(EntryImpl.create(position.getLedgerId(), position.getEntryId(),
                             messages.get(position).getBytes()),
-                            invocationOnMock.getArgument(2));
+                            invocationOnMock.getArgument(2), null);
                 }
                 return null;
             }
@@ -434,7 +434,7 @@ public class StreamingEntryReaderTests extends MockedBookKeeperTestCase {
                 } else {
                     cb.readEntryComplete(EntryImpl.create(position.getLedgerId(), position.getEntryId(),
                             messages.get(position).getBytes()),
-                            invocationOnMock.getArgument(2));
+                            invocationOnMock.getArgument(2), null);
                 }
                 return null;
             }
