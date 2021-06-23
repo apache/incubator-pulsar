@@ -401,7 +401,7 @@ public class PersistentTopicTest extends MockedBookKeeperTestCase {
     public void testAddRemoveProducer() throws Exception {
         PersistentTopic topic = new PersistentTopic(successTopicName, ledgerMock, brokerService);
 
-        String role = "appid1";
+        List<String> role = Collections.singletonList("appid1");
         // 1. simple add producer
         Producer producer = new Producer(topic, serverCnx, 1 /* producer id */, "prod-name",
                 role, false, null, SchemaVersion.Latest, 0, false,
@@ -441,7 +441,7 @@ public class PersistentTopicTest extends MockedBookKeeperTestCase {
     @Test
     public void testProducerOverwrite() throws Exception {
         PersistentTopic topic = new PersistentTopic(successTopicName, ledgerMock, brokerService);
-        String role = "appid1";
+        List<String> role = Collections.singletonList("appid1");
         Producer producer1 = new Producer(topic, serverCnx, 1 /* producer id */, "prod-name",
                 role, false, null, SchemaVersion.Latest, 0, true, ProducerAccessMode.Shared, Optional.empty());
         Producer producer2 = new Producer(topic, serverCnx, 2 /* producer id */, "prod-name",
@@ -510,7 +510,7 @@ public class PersistentTopicTest extends MockedBookKeeperTestCase {
 
     private void testMaxProducers() throws Exception {
         PersistentTopic topic = new PersistentTopic(successTopicName, ledgerMock, brokerService);
-        String role = "appid1";
+        List<String> role = Collections.singletonList("appid1");
         // 1. add producer1
         Producer producer = new Producer(topic, serverCnx, 1 /* producer id */, "prod-name1", role,
                 false, null, SchemaVersion.Latest, 0, false, ProducerAccessMode.Shared, Optional.empty());
@@ -559,7 +559,7 @@ public class PersistentTopicTest extends MockedBookKeeperTestCase {
     private Producer getMockedProducerWithSpecificAddress(Topic topic, long producerId, InetAddress address)
             throws Exception {
         final String producerNameBase = "producer";
-        final String role = "appid1";
+        final List<String> role = Collections.singletonList("appid1");
 
         ServerCnx cnx = spy(new ServerCnx(pulsar));
         doReturn(true).when(cnx).isActive();
@@ -1183,7 +1183,7 @@ public class PersistentTopicTest extends MockedBookKeeperTestCase {
         assertFalse((boolean) isFencedField.get(topic));
         assertFalse((boolean) isClosingOrDeletingField.get(topic));
 
-        String role = "appid1";
+        List<String> role = Collections.singletonList("appid1");
         // 1. delete inactive topic
         topic.delete().get();
         assertFalse(brokerService.getTopicReference(successTopicName).isPresent());
@@ -1393,7 +1393,7 @@ public class PersistentTopicTest extends MockedBookKeeperTestCase {
         }).get();
 
         try {
-            String role = "appid1";
+            List<String> role = Collections.singletonList("appid1");
             Thread.sleep(10); /* delay to ensure that the delete gets executed first */
             Producer producer = new Producer(topic, serverCnx, 1 /* producer id */, "prod-name",
                     role, false, null, SchemaVersion.Latest, 0, false, ProducerAccessMode.Shared, Optional.empty());

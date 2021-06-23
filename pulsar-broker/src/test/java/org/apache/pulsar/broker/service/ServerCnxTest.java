@@ -23,6 +23,7 @@ import static org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest.createMo
 import static org.apache.pulsar.broker.cache.ConfigurationCacheService.POLICIES;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.matches;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
@@ -47,6 +48,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
@@ -94,7 +96,6 @@ import org.apache.pulsar.common.protocol.PulsarHandler;
 import org.apache.pulsar.common.api.proto.AuthMethod;
 import org.apache.pulsar.common.api.proto.BaseCommand;
 import org.apache.pulsar.common.api.proto.CommandAck.AckType;
-import org.apache.pulsar.common.api.proto.CommandConnect;
 import org.apache.pulsar.common.api.proto.CommandConnected;
 import org.apache.pulsar.common.api.proto.CommandError;
 import org.apache.pulsar.common.api.proto.CommandLookupTopicResponse;
@@ -104,7 +105,6 @@ import org.apache.pulsar.common.api.proto.CommandSendReceipt;
 import org.apache.pulsar.common.api.proto.CommandSubscribe.InitialPosition;
 import org.apache.pulsar.common.api.proto.CommandSubscribe.SubType;
 import org.apache.pulsar.common.api.proto.CommandSuccess;
-import org.apache.pulsar.common.api.proto.EncryptionKeys;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.api.proto.ProtocolVersion;
 import org.apache.pulsar.common.api.proto.ServerError;
@@ -507,6 +507,60 @@ public class ServerCnxTest {
     }
 
     @Test(timeOut = 30000)
+    public void testProducerCommandWithMultiRolesAuthPositive() throws Exception {
+        AuthenticationService authenticationService = mock(AuthenticationService.class);
+        AuthenticationProvider authenticationProvider = mock(AuthenticationProvider.class);
+        AuthenticationState authenticationState = mock(AuthenticationState.class);
+        AuthenticationDataSource authenticationDataSource = mock(AuthenticationDataSource.class);
+        AuthData authData = AuthData.of(null);
+
+        doReturn(authenticationService).when(brokerService).getAuthenticationService();
+        doReturn(authenticationProvider).when(authenticationService).getAuthenticationProvider(Mockito.anyString());
+        doReturn(authenticationState).when(authenticationProvider)
+                .newAuthState(Mockito.any(), Mockito.any(), Mockito.any());
+        doReturn(authData).when(authenticationState)
+                .authenticate(authData);
+        doReturn(true).when(authenticationState)
+                .isComplete();
+
+        doReturn(Arrays.asList("not-allowed","allowed")).when(authenticationState)
+                .getAuthRoles();
+
+        doReturn(true).when(brokerService).isAuthenticationEnabled();
+        doReturn(true).when(brokerService).isAuthorizationEnabled();
+
+        AuthorizationService authorizationService = mock(AuthorizationService.class);
+        doReturn(CompletableFuture.completedFuture(false)).when(authorizationService).allowTopicOperationAsync(Mockito.any(),
+                Mockito.any(), eq("not-allowed"), Mockito.any());
+        doReturn(CompletableFuture.completedFuture(true)).when(authorizationService).allowTopicOperationAsync(Mockito.any(),
+                Mockito.any(), eq("allowed"), Mockito.any());
+        doReturn(authorizationService).when(brokerService).getAuthorizationService();
+        doReturn(true).when(brokerService).isAuthenticationEnabled();
+        resetChannel();
+
+        // test server response to CONNECT
+        ByteBuf connectCommand = Commands.newConnect("none", "", null);
+        channel.writeInbound(connectCommand);
+
+        assertEquals(serverCnx.getState(), State.Connected);
+        assertTrue(getResponse() instanceof CommandConnected);
+
+        // test PRODUCER success case
+        ByteBuf clientCommand = Commands.newProducer(successTopicName, 1 /* producer id */, 1 /* request id */,
+                "prod-name", Collections.emptyMap());
+        channel.writeInbound(clientCommand);
+        assertEquals(getResponse().getClass(), CommandProducerSuccess.class);
+
+        PersistentTopic topicRef = (PersistentTopic) brokerService.getTopicReference(successTopicName).get();
+
+        assertNotNull(topicRef);
+        assertEquals(topicRef.getProducers().size(), 1);
+
+        channel.finish();
+        assertEquals(topicRef.getProducers().size(), 0);
+    }
+
+    @Test(timeOut = 30000)
     public void testNonExistentTopic() throws Exception {
         ZooKeeperDataCache<Policies> zkDataCache = mock(ZooKeeperDataCache.class);
         ConfigurationCacheService configCacheService = mock(ConfigurationCacheService.class);
@@ -605,6 +659,7 @@ public class ServerCnxTest {
                 successSubName, 1 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0,
                 "test" /* consumer name */, 0 /* avoid reseting cursor */);
         channel.writeInbound(newSubscribeCmd);
+        Thread.sleep(500); // Waiting for processing newSubscribeCmd
         topicRef = (PersistentTopic) brokerService.getTopicReference(nonExistentTopicName).get();
         assertNotNull(topicRef);
         assertTrue(topicRef.getSubscriptions().containsKey(successSubName));
@@ -624,6 +679,50 @@ public class ServerCnxTest {
         doReturn("prod1").when(brokerService).generateUniqueProducerName();
         resetChannel();
         setChannelConnected();
+
+        ByteBuf clientCommand = Commands.newProducer(successTopicName, 1 /* producer id */, 1 /* request id */,
+                null, Collections.emptyMap());
+        channel.writeInbound(clientCommand);
+        assertTrue(getResponse() instanceof CommandError);
+
+        channel.finish();
+    }
+
+    @Test(timeOut = 30000)
+    public void testProducerCommandWithMultiRolesAuthNegative() throws Exception {
+        AuthenticationService authenticationService = mock(AuthenticationService.class);
+        AuthenticationProvider authenticationProvider = mock(AuthenticationProvider.class);
+        AuthenticationState authenticationState = mock(AuthenticationState.class);
+        AuthenticationDataSource authenticationDataSource = mock(AuthenticationDataSource.class);
+        AuthData authData = AuthData.of(null);
+
+        doReturn(authenticationService).when(brokerService).getAuthenticationService();
+        doReturn(authenticationProvider).when(authenticationService).getAuthenticationProvider(Mockito.anyString());
+        doReturn(authenticationState).when(authenticationProvider)
+                .newAuthState(Mockito.any(), Mockito.any(), Mockito.any());
+        doReturn(authData).when(authenticationState)
+                .authenticate(authData);
+        doReturn(true).when(authenticationState)
+                .isComplete();
+
+        doReturn(Arrays.asList("role-1","role-2")).when(authenticationState)
+                .getAuthRoles();
+
+        AuthorizationService authorizationService = mock(AuthorizationService.class);
+        doReturn(CompletableFuture.completedFuture(false)).when(authorizationService).allowTopicOperationAsync(Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.any());
+        doReturn(authorizationService).when(brokerService).getAuthorizationService();
+        doReturn(true).when(brokerService).isAuthenticationEnabled();
+        doReturn(true).when(brokerService).isAuthorizationEnabled();
+        doReturn("prod1").when(brokerService).generateUniqueProducerName();
+        resetChannel();
+
+        // test server response to CONNECT
+        ByteBuf connectCommand = Commands.newConnect("none", "", null);
+        channel.writeInbound(connectCommand);
+
+        assertEquals(serverCnx.getState(), State.Connected);
+        assertTrue(getResponse() instanceof CommandConnected);
 
         ByteBuf clientCommand = Commands.newProducer(successTopicName, 1 /* producer id */, 1 /* request id */,
                 null, Collections.emptyMap());
@@ -1228,6 +1327,54 @@ public class ServerCnxTest {
     }
 
     @Test(timeOut = 30000)
+    public void testSubscribeCommandWithMultiRolesAuthPositive() throws Exception {
+        AuthenticationService authenticationService = mock(AuthenticationService.class);
+        AuthenticationProvider authenticationProvider = mock(AuthenticationProvider.class);
+        AuthenticationState authenticationState = mock(AuthenticationState.class);
+        AuthenticationDataSource authenticationDataSource = mock(AuthenticationDataSource.class);
+        AuthData authData = AuthData.of(null);
+
+        doReturn(authenticationService).when(brokerService).getAuthenticationService();
+        doReturn(authenticationProvider).when(authenticationService).getAuthenticationProvider(Mockito.anyString());
+        doReturn(authenticationState).when(authenticationProvider)
+                .newAuthState(Mockito.any(), Mockito.any(), Mockito.any());
+        doReturn(authData).when(authenticationState)
+                .authenticate(authData);
+        doReturn(true).when(authenticationState)
+                .isComplete();
+
+        doReturn(Arrays.asList("not-allowed","allowed")).when(authenticationState)
+                .getAuthRoles();
+
+        AuthorizationService authorizationService = mock(AuthorizationService.class);
+        doReturn(CompletableFuture.completedFuture(false)).when(authorizationService).allowTopicOperationAsync(Mockito.any(),
+                Mockito.any(), eq("not-allowed"), Mockito.any());
+        doReturn(CompletableFuture.completedFuture(true)).when(authorizationService).allowTopicOperationAsync(Mockito.any(),
+                Mockito.any(), eq("allowed"), Mockito.any());
+        doReturn(authorizationService).when(brokerService).getAuthorizationService();
+        doReturn(true).when(brokerService).isAuthenticationEnabled();
+        doReturn(true).when(brokerService).isAuthorizationEnabled();
+        resetChannel();
+
+        // test server response to CONNECT
+        ByteBuf connectCommand = Commands.newConnect("none", "", null);
+        channel.writeInbound(connectCommand);
+
+        assertEquals(serverCnx.getState(), State.Connected);
+        assertTrue(getResponse() instanceof CommandConnected);
+
+        // test SUBSCRIBE on topic and cursor creation success
+        ByteBuf clientCommand = Commands.newSubscribe(successTopicName, //
+                successSubName, 1 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0,
+                "test" /* consumer name */, 0 /* avoid reseting cursor */);
+        channel.writeInbound(clientCommand);
+
+        assertTrue(getResponse() instanceof CommandSuccess);
+
+        channel.finish();
+    }
+
+    @Test(timeOut = 30000)
     public void testSubscribeCommandWithAuthorizationNegative() throws Exception {
         AuthorizationService authorizationService = mock(AuthorizationService.class);
         doReturn(CompletableFuture.completedFuture(false)).when(authorizationService).allowTopicOperationAsync(Mockito.any(),
@@ -1238,6 +1385,51 @@ public class ServerCnxTest {
 
         resetChannel();
         setChannelConnected();
+
+        // test SUBSCRIBE on topic and cursor creation success
+        ByteBuf clientCommand = Commands.newSubscribe(successTopicName, //
+                successSubName, 1 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0, "test" /* consumer name */, 0 /*avoid reseting cursor*/);
+        channel.writeInbound(clientCommand);
+        assertTrue(getResponse() instanceof CommandError);
+
+        channel.finish();
+    }
+
+    @Test(timeOut = 30000)
+    public void testSubscribeCommandWithMultiRolesAuthNegative() throws Exception {
+        AuthenticationService authenticationService = mock(AuthenticationService.class);
+        AuthenticationProvider authenticationProvider = mock(AuthenticationProvider.class);
+        AuthenticationState authenticationState = mock(AuthenticationState.class);
+        AuthenticationDataSource authenticationDataSource = mock(AuthenticationDataSource.class);
+        AuthData authData = AuthData.of(null);
+
+        doReturn(authenticationService).when(brokerService).getAuthenticationService();
+        doReturn(authenticationProvider).when(authenticationService).getAuthenticationProvider(Mockito.anyString());
+        doReturn(authenticationState).when(authenticationProvider)
+                .newAuthState(Mockito.any(), Mockito.any(), Mockito.any());
+        doReturn(authData).when(authenticationState)
+                .authenticate(authData);
+        doReturn(true).when(authenticationState)
+                .isComplete();
+
+        doReturn(Arrays.asList("role-1","role-2")).when(authenticationState)
+                .getAuthRoles();
+
+        AuthorizationService authorizationService = mock(AuthorizationService.class);
+        doReturn(CompletableFuture.completedFuture(false)).when(authorizationService).allowTopicOperationAsync(Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.any());
+        doReturn(authorizationService).when(brokerService).getAuthorizationService();
+        doReturn(true).when(brokerService).isAuthenticationEnabled();
+        doReturn(true).when(brokerService).isAuthorizationEnabled();
+
+        resetChannel();
+
+        // test server response to CONNECT
+        ByteBuf connectCommand = Commands.newConnect("none", "", null);
+        channel.writeInbound(connectCommand);
+
+        assertEquals(serverCnx.getState(), State.Connected);
+        assertTrue(getResponse() instanceof CommandConnected);
 
         // test SUBSCRIBE on topic and cursor creation success
         ByteBuf clientCommand = Commands.newSubscribe(successTopicName, //
@@ -1472,7 +1664,7 @@ public class ServerCnxTest {
             channel.close().get();
         }
         serverCnx = new ServerCnx(pulsar);
-        serverCnx.authRole = "";
+        serverCnx.authRoles = Collections.singletonList("");
         channel = new EmbeddedChannel(new LengthFieldBasedFrameDecoder(
                 MaxMessageSize,
                 0,

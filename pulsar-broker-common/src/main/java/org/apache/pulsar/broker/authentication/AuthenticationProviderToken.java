@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.net.SocketAddress;
 import java.security.Key;
 
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import javax.naming.AuthenticationException;
@@ -148,18 +149,37 @@ public class AuthenticationProviderToken implements AuthenticationProvider {
 
     @Override
     public String authenticate(AuthenticationDataSource authData) throws AuthenticationException {
+        List<String> principals = authenticate(authData, false);
+        if (principals.isEmpty()) {
+            return null;
+        }
+        return principals.get(0);
+    }
+
+    @Override
+    public List<String> authenticate(AuthenticationDataSource authData, boolean multiRoles) throws AuthenticationException {
         try {
             // Get Token
             String token;
             token = getToken(authData);
             // Parse Token by validating
-            String role = getPrincipal(authenticateToken(token));
+            List<String> principals = getPrincipals(authenticateToken(token));
             AuthenticationMetrics.authenticateSuccess(getClass().getSimpleName(), getAuthMethodName());
-            return role;
+            if (multiRoles) {
+                return principals;
+            } else if (!principals.isEmpty()) {
+                return Collections.singletonList(principals.get(0));
+            } else {
+                return principals;
+            }
         } catch (AuthenticationException exception) {
             AuthenticationMetrics.authenticateFailure(getClass().getSimpleName(), getAuthMethodName(), exception.getMessage());
             throw exception;
         }
+    }
+
+    public boolean isSupportMultiRoles() {
+        return true;
     }
 
     @Override
@@ -237,15 +257,19 @@ public class AuthenticationProviderToken implements AuthenticationProvider {
         }
     }
 
-    private String getPrincipal(Jwt<?, Claims> jwt) {
+    private List<String> getPrincipals(Jwt<?, Claims> jwt){
         try {
-            return jwt.getBody().get(roleClaim, String.class);
+            String principal = jwt.getBody().get(roleClaim, String.class);
+            if (principal == null) {
+                return Collections.emptyList();
+            }
+            return Collections.singletonList(principal);
         } catch (RequiredTypeException requiredTypeException) {
             List list = jwt.getBody().get(roleClaim, List.class);
             if (list != null && !list.isEmpty() && list.get(0) instanceof String) {
-                return (String) list.get(0);
+                return list;
             }
-            return null;
+            return Collections.emptyList();
         }
     }
 
@@ -332,7 +356,16 @@ public class AuthenticationProviderToken implements AuthenticationProvider {
 
         @Override
         public String getAuthRole() throws AuthenticationException {
-            return provider.getPrincipal(jwt);
+            List<String> roles = getAuthRoles();
+            if (roles == null || roles.isEmpty()) {
+                return null;
+            }
+            return roles.get(0);
+        }
+
+        @Override
+        public List<String> getAuthRoles() throws AuthenticationException {
+            return provider.getPrincipals(jwt);
         }
 
         @Override

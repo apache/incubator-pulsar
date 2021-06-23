@@ -39,11 +39,13 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -154,7 +156,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
     private final ConcurrentLongHashMap<CompletableFuture<Consumer>> consumers;
     private State state;
     private volatile boolean isActive = true;
-    String authRole = null;
+    List<String> authRoles = null;
     private volatile AuthenticationDataSource authenticationData;
     AuthenticationProvider authenticationProvider;
     AuthenticationState authState;
@@ -321,14 +323,14 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
 
     /*
      * If authentication and authorization is enabled(and not sasl) and
-     *  if the authRole is one of proxyRoles we want to enforce
+     *  if authRoles and proxyRoles we want to enforce intersect
      * - the originalPrincipal is given while connecting
      * - originalPrincipal is not blank
      * - originalPrincipal is not a proxy principal
      */
     private boolean invalidOriginalPrincipal(String originalPrincipal) {
         return (service.isAuthenticationEnabled() && service.isAuthorizationEnabled()
-                && proxyRoles.contains(authRole) && (StringUtils.isBlank(originalPrincipal)
+                && !Collections.disjoint(proxyRoles, authRoles) && (StringUtils.isBlank(originalPrincipal)
                 || proxyRoles.contains(originalPrincipal)));
     }
 
@@ -346,8 +348,19 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
             } else {
                 isProxyAuthorizedFuture = CompletableFuture.completedFuture(true);
             }
-            isAuthorizedFuture = service.getAuthorizationService().allowTopicOperationAsync(
-                topicName, operation, authRole, authenticationData);
+            isAuthorizedFuture = CompletableFuture.supplyAsync(() -> {
+                for (String authRole : authRoles) {
+                    try {
+                        if (service.getAuthorizationService().allowTopicOperationAsync(
+                                topicName, operation, authRole, authenticationData).get()) {
+                            return true;
+                        }
+                    } catch (InterruptedException | ExecutionException e) {
+                        log.warn("Exception occurred while trying to authorize topic operation {}: {}", operation, e);
+                    }
+                }
+                return false;
+            });
         } else {
             isProxyAuthorizedFuture = CompletableFuture.completedFuture(true);
             isAuthorizedFuture = CompletableFuture.completedFuture(true);
@@ -358,8 +371,8 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                         originalPrincipal, operation, topicName);
             }
             if (!isAuthorized) {
-                log.warn("Role {} is not authorized to perform operation {} on topic {}",
-                        authRole, operation, topicName);
+                log.warn("Roles {} are not authorized to perform operation {} on topic {}",
+                        authRoles, operation, topicName);
             }
             return isProxyAuthorized && isAuthorized;
         });
@@ -389,8 +402,8 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                     originalPrincipal, operation, topicName, subscriptionName);
             }
             if (!isAuthorized) {
-                log.warn("Role {} is not authorized to perform operation {} on topic {}, subscription {}",
-                    authRole, operation, topicName, subscriptionName);
+                log.warn("Roles {} are not authorized to perform operation {} on topic {}, subscription {}",
+                        authRoles, operation, topicName, subscriptionName);
             }
             return isProxyAuthorized && isAuthorized;
         });
@@ -415,7 +428,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         if (lookupSemaphore.tryAcquire()) {
             if (invalidOriginalPrincipal(originalPrincipal)) {
                 final String msg = "Valid Proxy Client role should be provided for lookup ";
-                log.warn("[{}] {} with role {} and proxyClientAuthRole {} on topic {}", remoteAddress, msg, authRole,
+                log.warn("[{}] {} with roles {} and proxyClientAuthRole {} on topic {}", remoteAddress, msg, authRoles,
                         originalPrincipal, topicName);
                 ctx.writeAndFlush(newLookupErrorResponse(ServerError.AuthorizationError, msg, requestId));
                 lookupSemaphore.release();
@@ -424,7 +437,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
             isTopicOperationAllowed(topicName, TopicOperation.LOOKUP).thenApply(isAuthorized -> {
                 if (isAuthorized) {
                     lookupTopicAsync(getBrokerService().pulsar(), topicName, authoritative,
-                            getPrincipal(), getAuthenticationData(),
+                            getPrincipals(), getAuthenticationData(),
                             requestId, advertisedListenerName).handle((lookupResponse, ex) -> {
                                 if (ex == null) {
                                     ctx.writeAndFlush(lookupResponse);
@@ -440,13 +453,13 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                             });
                 } else {
                     final String msg = "Proxy Client is not authorized to Lookup";
-                    log.warn("[{}] {} with role {} on topic {}", remoteAddress, msg, getPrincipal(), topicName);
+                    log.warn("[{}] {} with roles {} on topic {}", remoteAddress, msg, getPrincipals(), topicName);
                     ctx.writeAndFlush(newLookupErrorResponse(ServerError.AuthorizationError, msg, requestId));
                     lookupSemaphore.release();
                 }
                 return null;
             }).exceptionally(ex -> {
-                logAuthException(remoteAddress, "lookup", getPrincipal(), Optional.of(topicName), ex);
+                logAuthException(remoteAddress, "lookup", getPrincipals(), Optional.of(topicName), ex);
                 final String msg = "Exception occurred while trying to authorize lookup";
                 ctx.writeAndFlush(newLookupErrorResponse(ServerError.AuthorizationError, msg, requestId));
                 lookupSemaphore.release();
@@ -478,7 +491,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         if (lookupSemaphore.tryAcquire()) {
             if (invalidOriginalPrincipal(originalPrincipal)) {
                 final String msg = "Valid Proxy Client role should be provided for getPartitionMetadataRequest ";
-                log.warn("[{}] {} with role {} and proxyClientAuthRole {} on topic {}", remoteAddress, msg, authRole,
+                log.warn("[{}] {} with roles {} and proxyClientAuthRole {} on topic {}", remoteAddress, msg, authRoles,
                         originalPrincipal, topicName);
                 commandSender.sendPartitionMetadataResponse(ServerError.AuthorizationError, msg, requestId);
                 lookupSemaphore.release();
@@ -493,7 +506,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                                     commandSender.sendPartitionMetadataResponse(partitions, requestId);
                                 } else {
                                     if (ex instanceof PulsarClientException) {
-                                        log.warn("Failed to authorize {} at [{}] on topic {} : {}", getRole(),
+                                        log.warn("Failed to authorize {} at [{}] on topic {} : {}", getRoles(),
                                                 remoteAddress, topicName, ex.getMessage());
                                         commandSender.sendPartitionMetadataResponse(ServerError.AuthorizationError,
                                                 ex.getMessage(), requestId);
@@ -512,14 +525,14 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                             });
                 } else {
                     final String msg = "Proxy Client is not authorized to Get Partition Metadata";
-                    log.warn("[{}] {} with role {} on topic {}", remoteAddress, msg, getPrincipal(), topicName);
+                    log.warn("[{}] {} with roles {} on topic {}", remoteAddress, msg, getPrincipals(), topicName);
                     ctx.writeAndFlush(
                             Commands.newPartitionMetadataResponse(ServerError.AuthorizationError, msg, requestId));
                     lookupSemaphore.release();
                 }
                 return null;
             }).exceptionally(ex -> {
-                logAuthException(remoteAddress, "partition-metadata", getPrincipal(), Optional.of(topicName), ex);
+                logAuthException(remoteAddress, "partition-metadata", getPrincipals(), Optional.of(topicName), ex);
                 final String msg = "Exception occurred while trying to authorize get Partition Metadata";
                 ctx.writeAndFlush(Commands.newPartitionMetadataResponse(ServerError.AuthorizationError, msg,
                         requestId));
@@ -613,12 +626,12 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         // In this case, the re-validation needs to be done against the original client
         // credentials.
         boolean useOriginalAuthState = (originalAuthState != null);
-        AuthenticationState authState =  useOriginalAuthState ? originalAuthState : this.authState;
-        String authRole = useOriginalAuthState ? originalPrincipal : this.authRole;
+        AuthenticationState authState = useOriginalAuthState ? originalAuthState : this.authState;
+        List<String> authRole = useOriginalAuthState ? Collections.singletonList(originalPrincipal) : this.authRoles;
         AuthData brokerData = authState.authenticate(clientData);
 
         if (log.isDebugEnabled()) {
-            log.debug("Authenticate using original auth state : {}, role = {}", useOriginalAuthState, authRole);
+            log.debug("Authenticate using original auth state : {}, roles = {}", useOriginalAuthState, authRole);
         }
 
         if (authState.isComplete()) {
@@ -627,21 +640,21 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
             //    a `CommandConnected` response
             // 2. an authentication refresh, in which case we need to refresh authenticationData
 
-            String newAuthRole = authState.getAuthRole();
+            List<String> newAuthRole = authState.getAuthRoles();
 
             // Refresh the auth data.
             this.authenticationData = authState.getAuthDataSource();
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Auth data refreshed for role={}", remoteAddress, this.authRole);
+                log.debug("[{}] Auth data refreshed for roles={}", remoteAddress, this.authRoles);
             }
 
             if (!useOriginalAuthState) {
-                this.authRole = newAuthRole;
+                this.authRoles = newAuthRole;
             }
 
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Client successfully authenticated with {} role {} and originalPrincipal {}",
-                        remoteAddress, authMethod, this.authRole, originalPrincipal);
+                log.debug("[{}] Client successfully authenticated with {} roles {} and originalPrincipal {}",
+                        remoteAddress, authMethod, this.authRoles, originalPrincipal);
             }
 
             if (state != State.Connected) {
@@ -649,7 +662,10 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                 completeConnect(clientProtocolVersion, clientVersion);
             } else {
                 // If the connection was already ready, it means we're doing a refresh
-                if (!StringUtils.isEmpty(authRole)) {
+                if (!authRole.isEmpty() && !StringUtils.isEmpty(authRole.get(0))) {
+                    // We need to sort both two roles array before we compare them.
+                    Collections.sort(authRole);
+                    Collections.sort(newAuthRole);
                     if (!authRole.equals(newAuthRole)) {
                         log.warn("[{}] Principal cannot change during an authentication refresh expected={} got={}",
                                 remoteAddress, authRole, newAuthRole);
@@ -694,8 +710,8 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         }
 
         ctx.executor().execute(SafeRun.safeRun(() -> {
-            log.info("[{}] Refreshing authentication credentials for originalPrincipal {} and authRole {}",
-                    remoteAddress, originalPrincipal, this.authRole);
+            log.info("[{}] Refreshing authentication credentials for originalPrincipal {} and authRoles {}",
+                    remoteAddress, originalPrincipal, this.authRoles);
 
             if (!supportsAuthenticationRefresh()) {
                 log.warn("[{}] Closing connection because client doesn't support auth credentials refresh",
@@ -778,9 +794,12 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
             // Not find provider named authMethod. Most used for tests.
             // In AuthenticationDisabled, it will set authMethod "none".
             if (authenticationProvider == null) {
-                authRole = getBrokerService().getAuthenticationService().getAnonymousUserRole()
-                    .orElseThrow(() ->
-                        new AuthenticationException("No anonymous role, and no authentication provider configured"));
+                final String anonymousUserRole = getBrokerService().getAuthenticationService().getAnonymousUserRole().
+                        orElseThrow(() ->
+                                new AuthenticationException("No anonymous role, and no authentication provider "
+                                        + "configured"));
+                authRoles = StringUtils.isNotEmpty(anonymousUserRole)
+                        ? Collections.singletonList(anonymousUserRole) : Collections.emptyList();
                 completeConnect(clientProtocolVersion, clientVersion);
                 return;
             }
@@ -796,8 +815,8 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
             authenticationData = authState.getAuthDataSource();
 
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Authenticate role : {}", remoteAddress,
-                    authState != null ? authState.getAuthRole() : null);
+                log.debug("[{}] Authenticate roles : {}", remoteAddress,
+                        authState != null ? authState.getAuthRoles() : null);
             }
 
             state = doAuthentication(clientData, clientProtocolVersion, clientVersion);
@@ -844,7 +863,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
             }
         } catch (Exception e) {
             service.getPulsarStats().recordConnectionCreateFail();
-            logAuthException(remoteAddress, "connect", getPrincipal(), Optional.empty(), e);
+            logAuthException(remoteAddress, "connect", getPrincipals(), Optional.empty(), e);
             String msg = "Unable to authenticate";
             ctx.writeAndFlush(Commands.newError(-1, ServerError.AuthenticationError, msg));
             close();
@@ -891,13 +910,13 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         }
 
         if (log.isDebugEnabled()) {
-            log.debug("[{}] Handle subscribe command: auth role = {}, original auth role = {}",
-                remoteAddress, authRole, originalPrincipal);
+            log.debug("[{}] Handle subscribe command: auth roles = {}, original auth role = {}",
+                remoteAddress, authRoles, originalPrincipal);
         }
 
         if (invalidOriginalPrincipal(originalPrincipal)) {
             final String msg = "Valid Proxy Client role should be provided while subscribing ";
-            log.warn("[{}] {} with role {} and proxyClientAuthRole {} on topic {}", remoteAddress, msg, authRole,
+            log.warn("[{}] {} with roles {} and proxyClientAuthRole {} on topic {}", remoteAddress, msg, authRoles,
                     originalPrincipal, topicName);
             commandSender.sendErrorResponse(requestId, ServerError.AuthorizationError, msg);
             return;
@@ -934,8 +953,8 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         isAuthorizedFuture.thenApply(isAuthorized -> {
             if (isAuthorized) {
                 if (log.isDebugEnabled()) {
-                    log.debug("[{}] Client is authorized to subscribe with role {}",
-                            remoteAddress, getPrincipal());
+                    log.debug("[{}] Client is authorized to subscribe with roles {}",
+                            remoteAddress, getPrincipals());
                 }
 
                         log.info("[{}] Subscribing on topic {} / {}", remoteAddress, topicName, subscriptionName);
@@ -1073,12 +1092,12 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                                 });
                     } else {
                         String msg = "Client is not authorized to subscribe";
-                        log.warn("[{}] {} with role {}", remoteAddress, msg, getPrincipal());
+                        log.warn("[{}] {} with roles {}", remoteAddress, msg, getPrincipals());
                         ctx.writeAndFlush(Commands.newError(requestId, ServerError.AuthorizationError, msg));
                     }
                     return null;
         }).exceptionally(ex -> {
-            logAuthException(remoteAddress, "subscribe", getPrincipal(), Optional.of(topicName), ex);
+            logAuthException(remoteAddress, "subscribe", getPrincipals(), Optional.of(topicName), ex);
             commandSender.sendErrorResponse(requestId, ServerError.AuthorizationError, ex.getMessage());
             return null;
         });
@@ -1124,7 +1143,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
 
         if (invalidOriginalPrincipal(originalPrincipal)) {
             final String msg = "Valid Proxy Client role should be provided while creating producer ";
-            log.warn("[{}] {} with role {} and proxyClientAuthRole {} on topic {}", remoteAddress, msg, authRole,
+            log.warn("[{}] {} with roles {} and proxyClientAuthRole {} on topic {}", remoteAddress, msg, authRoles,
                     originalPrincipal, topicName);
             commandSender.sendErrorResponse(requestId, ServerError.AuthorizationError, msg);
             return;
@@ -1136,8 +1155,8 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         isAuthorizedFuture.thenApply(isAuthorized -> {
                     if (isAuthorized) {
                         if (log.isDebugEnabled()) {
-                            log.debug("[{}] Client is authorized to Produce with role {}",
-                                    remoteAddress, getPrincipal());
+                            log.debug("[{}] Client is authorized to Produce with roles {}",
+                                    remoteAddress, getPrincipals());
                         }
                         CompletableFuture<Producer> producerFuture = new CompletableFuture<>();
                         CompletableFuture<Producer> existingProducerFuture = producers.putIfAbsent(producerId,
@@ -1228,7 +1247,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                             schemaVersionFuture.thenAccept(schemaVersion -> {
                                 CompletableFuture<Void> producerQueuedFuture = new CompletableFuture<>();
                                 Producer producer = new Producer(topic, ServerCnx.this, producerId, producerName,
-                                        getPrincipal(), isEncrypted, metadata, schemaVersion, epoch,
+                                        getPrincipals(), isEncrypted, metadata, schemaVersion, epoch,
                                         userProvidedProducerName, producerAccessMode, topicEpoch);
 
                                 topic.addProducer(producer, producerQueuedFuture).thenAccept(newTopicEpoch -> {
@@ -1307,12 +1326,12 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                         });
                     } else {
                         String msg = "Client is not authorized to Produce";
-                        log.warn("[{}] {} with role {}", remoteAddress, msg, getPrincipal());
+                        log.warn("[{}] {} with role {}", remoteAddress, msg, getPrincipals());
                         ctx.writeAndFlush(Commands.newError(requestId, ServerError.AuthorizationError, msg));
                     }
                     return null;
         }).exceptionally(ex -> {
-            logAuthException(remoteAddress, "producer", getPrincipal(), Optional.of(topicName), ex);
+            logAuthException(remoteAddress, "producer", getPrincipals(), Optional.of(topicName), ex);
             commandSender.sendErrorResponse(requestId, ServerError.AuthorizationError, ex.getMessage());
             return null;
         });
@@ -2370,8 +2389,8 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         return service;
     }
 
-    public String getRole() {
-        return authRole;
+    public List<String> getRoles() {
+        return authRoles;
     }
 
     @Override
@@ -2431,8 +2450,11 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         return originalAuthData != null ? originalAuthData : authenticationData;
     }
 
-    public String getPrincipal() {
-        return originalPrincipal != null ? originalPrincipal : authRole;
+    public List<String> getPrincipals() {
+        if (originalPrincipal != null) {
+            return Collections.singletonList(originalPrincipal);
+        }
+        return authRoles;
     }
 
     public AuthenticationProvider getAuthenticationProvider() {
@@ -2441,7 +2463,10 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
 
     @Override
     public String getAuthRole() {
-        return authRole;
+        if (authRoles != null && !authRoles.isEmpty()) {
+            return authRoles.get(0);
+        }
+        return null;
     }
 
     public String getAuthMethod() {
@@ -2479,14 +2504,14 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
     }
 
     private static void logAuthException(SocketAddress remoteAddress, String operation,
-                                         String principal, Optional<TopicName> topic, Throwable ex) {
+                                         List<String> principals, Optional<TopicName> topic, Throwable ex) {
         String topicString = topic.map(t -> ", topic=" + t.toString()).orElse("");
         if (ex instanceof AuthenticationException) {
-            log.info("[{}] Failed to authenticate: operation={}, principal={}{}, reason={}",
-                    remoteAddress, operation, principal, topicString, ex.getMessage());
+            log.info("[{}] Failed to authenticate: operation={}, principals={}{}, reason={}",
+                    remoteAddress, operation, principals, topicString, ex.getMessage());
         } else {
-            log.error("[{}] Error trying to authenticate: operation={}, principal={}{}",
-                    remoteAddress, operation, principal, topicString, ex);
+            log.error("[{}] Error trying to authenticate: operation={}, principals={}{}",
+                    remoteAddress, operation, principals, topicString, ex);
         }
     }
 
