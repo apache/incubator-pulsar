@@ -17,7 +17,7 @@
 # under the License.
 #
 
-FROM openjdk:11-jdk-slim
+FROM adoptopenjdk:11-jdk
 
 RUN groupadd -g 10001 pulsar
 RUN adduser -u 10000 --gid 10001 --disabled-login --disabled-password --gecos '' pulsar

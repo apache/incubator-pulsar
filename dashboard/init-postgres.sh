@@ -23,8 +23,11 @@ set -x -e
 rm -rf /data/*
 chown -R postgres: /data
 chmod 700 /data
-sudo -u postgres /usr/lib/postgresql/11/bin/initdb /data/
-sudo -u postgres /usr/lib/postgresql/11/bin/pg_ctl -D /data/ start
+
+POSTGRES_ROOT=$(ls -d /usr/lib/postgresql/*)
+
+sudo -u postgres $POSTGRES_ROOT/bin/initdb /data/
+sudo -u postgres $POSTGRES_ROOT/bin/pg_ctl -D /data/ start
 sudo -u postgres psql --command "CREATE USER docker WITH PASSWORD 'docker';"
 sudo -u postgres createdb -O docker pulsar_dashboard
 
