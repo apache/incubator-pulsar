@@ -19,9 +19,8 @@
 package org.apache.pulsar.common.util;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-
+import java.util.concurrent.*;
+import java.util.function.Supplier;
 /**
  * This class is aimed at simplifying work with {@code CompletableFuture}.
  */
@@ -35,6 +34,41 @@ public class FutureUtil {
      */
     public static <T> CompletableFuture<Void> waitForAll(List<CompletableFuture<T>> futures) {
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+    }
+
+    /**
+     * Return a futrue, which can be scheduled regularly.
+     * @param executor Periodic execution method
+     * @param command This is a functional interface and can therefore be used as the assignment
+     * target for a lambda expression or method reference.
+     * @param delay Delayable time
+     * @param unit Set time unit
+     * @return a new CompletableFuture that is completed when all of the given CompletableFutures complete
+     */
+    public static <T> CompletableFuture<T> schedule(
+            ScheduledExecutorService executor,
+            Supplier<T> command,
+            long delay,
+            TimeUnit unit
+    ) {
+        CompletableFuture<T> completableFuture = new CompletableFuture<>();
+        ScheduledFuture timeout =  executor.schedule(
+                (() -> {
+                    try {
+                        return completableFuture.complete(command.get());
+                    } catch (Throwable t) {
+                        return completableFuture.completeExceptionally(t);
+                    }
+                }),
+                delay,
+                unit
+        );
+        //When the captured futrue throws an exception, the worker thread clears the interruption status in time
+        completableFuture.whenComplete((igrone ,exception1) -> {
+            timeout.cancel(true);
+        });
+
+        return completableFuture;
     }
 
     public static <T> CompletableFuture<T> failedFuture(Throwable t) {
