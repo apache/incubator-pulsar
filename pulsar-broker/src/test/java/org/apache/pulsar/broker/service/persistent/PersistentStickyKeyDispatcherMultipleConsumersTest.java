@@ -24,9 +24,12 @@ import io.netty.channel.ChannelPromise;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.impl.EntryImpl;
 import org.apache.bookkeeper.mledger.impl.ManagedCursorImpl;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.util.collections.ConcurrentLongLongPairHashMap;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.service.*;
+import org.apache.pulsar.broker.service.persistent.PersistentDispatcherMultipleConsumers.ReadType;
 import org.apache.pulsar.common.api.proto.KeySharedMeta;
 import org.apache.pulsar.common.api.proto.KeySharedMode;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
@@ -114,7 +117,6 @@ public class PersistentStickyKeyDispatcherMultipleConsumersTest {
                 anyLong(),
                 any(RedeliveryTracker.class)
         );
-
         subscriptionMock = mock(PersistentSubscription.class);
 
         PowerMockito.mockStatic(DispatchRateLimiter.class);
@@ -196,6 +198,77 @@ public class PersistentStickyKeyDispatcherMultipleConsumersTest {
             persistentDispatcher.readEntriesComplete(entries, PersistentStickyKeyDispatcherMultipleConsumers.ReadType.Normal);
         } catch (Exception e) {
             fail("Failed to readEntriesComplete.", e);
+        }
+    }
+
+    @Test(timeOut = 10000)
+    public void testSendStickMessage() {
+        KeySharedMeta keySharedMeta = new KeySharedMeta().setKeySharedMode(KeySharedMode.STICKY);
+        keySharedMeta.setAllowOutOfOrderDelivery(false);
+        PersistentStickyKeyDispatcherMultipleConsumers persistentDispatcher = new PersistentStickyKeyDispatcherMultipleConsumers(
+                topicMock, cursorMock, subscriptionMock, configMock, keySharedMeta);
+
+        List<Entry> entries = new ArrayList<>();
+        entries.add(EntryImpl.create(1, 1, createMessage("message1", 1)));
+        entries.add(EntryImpl.create(1, 2, createMessage("message2", 2)));
+        try {
+            keySharedMeta.addHashRange()
+                    .setStart(0)
+                    .setEnd(9);
+
+            doReturn(new PositionImpl(1,3)).when(cursorMock).getReadPosition();
+            Consumer consumerMock = mock(Consumer.class);
+            doReturn(keySharedMeta).when(consumerMock).getKeySharedMeta();
+            persistentDispatcher.addConsumer(consumerMock);
+            /**
+             * permit == 0, and  readPositionWhenJoining == [1,0]
+             */
+            persistentDispatcher.getRecentlyJoinedConsumers().put(consumerMock,new PositionImpl(1
+                    ,0));
+
+            int messagesForC = persistentDispatcher.getRestrictedMaxEntriesForConsumer(consumerMock
+                    , entries, 0, ReadType.Replay);
+            Assert.assertEquals(messagesForC, 0);
+
+            /**
+             * maxMessages == 2, and  readPositionWhenJoining == [1,0] and message has been send
+             */
+            ConcurrentLongLongPairHashMap pendingAcks = new ConcurrentLongLongPairHashMap(256, 1);
+            pendingAcks.put(1,1,1,0);
+            doReturn(null).when(cursorMock).getMarkDeletedPosition();
+            doReturn(pendingAcks).when(consumerMock).getPendingAcks();
+            messagesForC = persistentDispatcher.getRestrictedMaxEntriesForConsumer(consumerMock
+                    , entries, 2, ReadType.Replay);
+            Assert.assertEquals(messagesForC, 0);
+
+
+            /**
+             * maxMessages == 2, and  readPositionWhenJoining == [1,0] and message did not been
+             * send or last time send error
+             */
+            pendingAcks.clear();
+            doReturn(null).when(cursorMock).getMarkDeletedPosition();
+            doReturn(pendingAcks).when(consumerMock).getPendingAcks();
+            messagesForC = persistentDispatcher.getRestrictedMaxEntriesForConsumer(consumerMock
+                    , entries, 2, ReadType.Replay);
+            Assert.assertEquals(messagesForC, 2);
+
+
+            /**
+             * maxMessages == 2, and  readPositionWhenJoining == [1,0] and message has been send
+             * persistentDispatcher.getRecentlyJoinedConsumers.size == 0
+             */
+            persistentDispatcher.getRecentlyJoinedConsumers().clear();
+            pendingAcks.put(1,1,1,0);
+            doReturn(null).when(cursorMock).getMarkDeletedPosition();
+            doReturn(pendingAcks).when(consumerMock).getPendingAcks();
+            messagesForC = persistentDispatcher.getRestrictedMaxEntriesForConsumer(consumerMock
+                    , entries, 2, ReadType.Replay);
+            Assert.assertEquals(messagesForC, 2);
+
+
+        } catch (Exception e) {
+            fail("Failed to add mock consumer", e);
         }
     }
 
