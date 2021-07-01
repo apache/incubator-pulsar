@@ -127,7 +127,8 @@ public class PersistentStickyKeyDispatcherMultipleConsumersTest {
                 anyInt(),
                 anyLong(),
                 anyLong(),
-                any(RedeliveryTracker.class)
+                any(RedeliveryTracker.class),
+                anyLong()
         );
 
         subscriptionMock = mock(PersistentSubscription.class);
@@ -164,7 +165,7 @@ public class PersistentStickyKeyDispatcherMultipleConsumersTest {
         entries.add(EntryImpl.create(1, 6, createMessage("message5", 5)));
 
         try {
-            persistentDispatcher.readEntriesComplete(entries, PersistentStickyKeyDispatcherMultipleConsumers.ReadType.Normal);
+            persistentDispatcher.readEntriesComplete(entries, PersistentStickyKeyDispatcherMultipleConsumers.ReadType.Normal, 0L);
         } catch (Exception e) {
             fail("Failed to readEntriesComplete.", e);
         }
@@ -177,7 +178,8 @@ public class PersistentStickyKeyDispatcherMultipleConsumersTest {
                 totalMessagesCaptor.capture(),
                 anyLong(),
                 anyLong(),
-                any(RedeliveryTracker.class)
+                any(RedeliveryTracker.class),
+                anyLong()
         );
 
         List<Integer> allTotalMessagesCaptor = totalMessagesCaptor.getAllValues();
@@ -208,7 +210,7 @@ public class PersistentStickyKeyDispatcherMultipleConsumersTest {
 
         try {
             //Should success,see issue #8960
-            persistentDispatcher.readEntriesComplete(entries, PersistentStickyKeyDispatcherMultipleConsumers.ReadType.Normal);
+            persistentDispatcher.readEntriesComplete(entries, PersistentStickyKeyDispatcherMultipleConsumers.ReadType.Normal, 0L);
         } catch (Exception e) {
             fail("Failed to readEntriesComplete.", e);
         }
@@ -232,11 +234,11 @@ public class PersistentStickyKeyDispatcherMultipleConsumersTest {
 
             doAnswer(invocationOnMock -> {
                 ((PersistentStickyKeyDispatcherMultipleConsumers) invocationOnMock.getArgument(2))
-                        .readEntriesComplete(readEntries, PersistentStickyKeyDispatcherMultipleConsumers.ReadType.Normal);
+                        .readEntriesComplete(readEntries, PersistentStickyKeyDispatcherMultipleConsumers.ReadType.Normal, 0L);
                 return null;
             }).when(cursorMock).asyncReadEntriesOrWait(
                     anyInt(), anyLong(), any(PersistentStickyKeyDispatcherMultipleConsumers.class),
-                    eq(PersistentStickyKeyDispatcherMultipleConsumers.ReadType.Normal), any());
+                    eq(PersistentStickyKeyDispatcherMultipleConsumers.ReadType.Normal), any(), anyLong());
         } catch (Exception e) {
             fail("Failed to set to field", e);
         }
@@ -256,7 +258,8 @@ public class PersistentStickyKeyDispatcherMultipleConsumersTest {
                     anyInt(),
                     anyLong(),
                     anyLong(),
-                    any(RedeliveryTracker.class)
+                    any(RedeliveryTracker.class),
+                    anyLong()
             );
 
             persistentDispatcher.addConsumer(consumerMock);
@@ -285,7 +288,8 @@ public class PersistentStickyKeyDispatcherMultipleConsumersTest {
                 anyInt(),
                 anyLong(),
                 anyLong(),
-                any(RedeliveryTracker.class)
+                any(RedeliveryTracker.class),
+                anyLong()
         );
         verify(slowConsumerMock, times(0)).sendMessages(
                 anyList(),
@@ -294,7 +298,8 @@ public class PersistentStickyKeyDispatcherMultipleConsumersTest {
                 anyInt(),
                 anyLong(),
                 anyLong(),
-                any(RedeliveryTracker.class)
+                any(RedeliveryTracker.class),
+                anyLong()
         );
     }
 

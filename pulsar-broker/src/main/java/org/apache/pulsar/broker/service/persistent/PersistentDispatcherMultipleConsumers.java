@@ -18,6 +18,7 @@
  */
 package org.apache.pulsar.broker.service.persistent;
 
+import static org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl.DEFAULT_READ_EPOCH;
 import static org.apache.pulsar.broker.service.persistent.PersistentTopic.MESSAGE_RATE_BACKOFF_MS;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Lists;
@@ -265,7 +266,7 @@ public class PersistentDispatcherMultipleConsumers extends AbstractDispatcherMul
                 havePendingRead = true;
                 cursor.asyncReadEntriesOrWait(messagesToRead, serviceConfig.getDispatcherMaxReadSizeBytes(),
                         this,
-                        ReadType.Normal, topic.getMaxReadPosition());
+                        ReadType.Normal, topic.getMaxReadPosition(), DEFAULT_READ_EPOCH);
             } else {
                 log.debug("[{}] Cannot schedule next read until previous one is done", name);
             }
@@ -435,7 +436,7 @@ public class PersistentDispatcherMultipleConsumers extends AbstractDispatcherMul
     }
 
     @Override
-    public synchronized void readEntriesComplete(List<Entry> entries, Object ctx) {
+    public synchronized void readEntriesComplete(List<Entry> entries, Object ctx, long epoch) {
         ReadType readType = (ReadType) ctx;
         if (readType == ReadType.Normal) {
             havePendingRead = false;
@@ -537,7 +538,8 @@ public class PersistentDispatcherMultipleConsumers extends AbstractDispatcherMul
                         batchSizes, sendMessageInfo, batchIndexesAcks, cursor, readType == ReadType.Replay);
 
                 c.sendMessages(entriesForThisConsumer, batchSizes, batchIndexesAcks, sendMessageInfo.getTotalMessages(),
-                        sendMessageInfo.getTotalBytes(), sendMessageInfo.getTotalChunkedMessages(), redeliveryTracker);
+                        sendMessageInfo.getTotalBytes(),
+                        sendMessageInfo.getTotalChunkedMessages(), redeliveryTracker, DEFAULT_READ_EPOCH);
 
                 int msgSent = sendMessageInfo.getTotalMessages();
                 remainingMessages -= msgSent;
@@ -701,7 +703,7 @@ public class PersistentDispatcherMultipleConsumers extends AbstractDispatcherMul
     }
 
     @Override
-    public synchronized void redeliverUnacknowledgedMessages(Consumer consumer) {
+    public synchronized CompletableFuture<Void> redeliverUnacknowledgedMessages(Consumer consumer, long consumerEpoch) {
         consumer.getPendingAcks().forEach((ledgerId, entryId, batchSize, none) -> {
             addMessageToReplay(ledgerId, entryId);
         });
@@ -710,6 +712,7 @@ public class PersistentDispatcherMultipleConsumers extends AbstractDispatcherMul
                     messagesToRedeliver);
         }
         readMoreEntries();
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override

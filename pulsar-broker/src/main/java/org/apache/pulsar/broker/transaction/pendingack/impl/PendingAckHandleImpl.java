@@ -39,6 +39,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.service.BrokerServiceException.NotAllowedException;
 import org.apache.pulsar.broker.service.BrokerServiceException.ServiceUnitNotReadyException;
 import org.apache.pulsar.broker.service.Consumer;
+import org.apache.pulsar.broker.service.persistent.PersistentDispatcherSingleActiveConsumer;
 import org.apache.pulsar.broker.service.persistent.PersistentSubscription;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.broker.transaction.pendingack.PendingAckHandle;
@@ -383,7 +384,9 @@ public class PendingAckHandleImpl extends PendingAckHandleState implements Pendi
                         if (cumulativeAckOfTransaction.getKey().equals(txnId)) {
                             cumulativeAckOfTransaction = null;
                         }
-                        persistentSubscription.redeliverUnacknowledgedMessages(consumer);
+                        this.persistentSubscription.redeliverUnacknowledgedMessages(consumer,
+                                ((PersistentDispatcherSingleActiveConsumer) this.persistentSubscription
+                                        .getDispatcher()).getConsumerEpoch());
                         abortFuture.complete(null);
                     }).exceptionally(e -> {
                         log.error("[{}] Transaction pending ack store abort txnId : [{}] fail!",

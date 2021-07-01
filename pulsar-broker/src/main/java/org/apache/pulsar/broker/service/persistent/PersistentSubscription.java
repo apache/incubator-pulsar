@@ -1047,11 +1047,12 @@ public class PersistentSubscription implements Subscription {
     }
 
     @Override
-    public void redeliverUnacknowledgedMessages(Consumer consumer) {
+    public CompletableFuture<Void> redeliverUnacknowledgedMessages(Consumer consumer, long consumerEpoch) {
         Dispatcher dispatcher = getDispatcher();
         if (dispatcher != null) {
-            dispatcher.redeliverUnacknowledgedMessages(consumer);
+            return dispatcher.redeliverUnacknowledgedMessages(consumer, consumerEpoch);
         }
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override

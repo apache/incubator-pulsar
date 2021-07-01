@@ -76,6 +76,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl.DEFAULT_READ_EPOCH;
 import static org.apache.pulsar.common.protocol.Commands.serializeMetadataAndPayload;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.any;
@@ -631,13 +632,13 @@ public abstract class TestPulsarConnector {
                                     count++;
                                 }
 
-                                callback.readEntriesComplete(entries, ctx);
+                                callback.readEntriesComplete(entries, ctx, DEFAULT_READ_EPOCH);
                             }
                         }).start();
 
                         return null;
                     }
-                }).when(readOnlyCursor).asyncReadEntries(anyInt(), anyLong(), any(), any(), any());
+                }).when(readOnlyCursor).asyncReadEntries(anyInt(), anyLong(), any(), any(), any(), anyLong());
 
                 when(readOnlyCursor.hasMoreEntries()).thenAnswer(new Answer<Boolean>() {
                     @Override
