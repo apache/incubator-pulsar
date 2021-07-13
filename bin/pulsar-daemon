@@ -20,7 +20,7 @@
 
 usage() {
     cat <<EOF
-Usage: pulsar-daemon (start|stop) <command> <args...>
+Usage: pulsar-daemon (start|stop|restart) <command> <args...>
 where command is one of:
     broker              Run a broker server
     bookie              Run a bookie server
