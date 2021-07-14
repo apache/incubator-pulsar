@@ -68,6 +68,8 @@ public class PersistentStickyKeyDispatcherMultipleConsumers extends PersistentDi
     private final Set<Consumer> stuckConsumers;
     private final Set<Consumer> nextStuckConsumers;
 
+    private long stickConsumerBackOffDelayTimeMs = 500;
+
     PersistentStickyKeyDispatcherMultipleConsumers(PersistentTopic topic, ManagedCursor cursor,
             Subscription subscription, ServiceConfiguration conf, KeySharedMeta ksm) {
         super(topic, cursor, subscription);
@@ -77,6 +79,7 @@ public class PersistentStickyKeyDispatcherMultipleConsumers extends PersistentDi
         this.stuckConsumers = new HashSet<>();
         this.nextStuckConsumers = new HashSet<>();
 
+        this.stickConsumerBackOffDelayTimeMs = conf.getStickConsumerBackOffDelayTimeMs();
         switch (ksm.getKeySharedMode()) {
         case AUTO_SPLIT:
             if (conf.isSubscriptionKeySharedUseConsistentHashing()) {
@@ -278,7 +281,7 @@ public class PersistentStickyKeyDispatcherMultipleConsumers extends PersistentDi
                 synchronized (PersistentStickyKeyDispatcherMultipleConsumers.this) {
                     readMoreEntries();
                 }
-            }, 100, TimeUnit.MILLISECONDS);
+            }, stickConsumerBackOffDelayTimeMs, TimeUnit.MILLISECONDS);
         }
     }
 
