@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Contains all the data that is maintained locally on each broker.
@@ -116,9 +117,9 @@ public class LocalBrokerData implements LoadManagerReport {
         directMemory = new ResourceUsage();
         bandwidthIn = new ResourceUsage();
         bandwidthOut = new ResourceUsage();
-        bundles = new HashSet<>();
-        lastBundleGains = new HashSet<>();
-        lastBundleLosses = new HashSet<>();
+        bundles = ConcurrentHashMap.newKeySet();
+        lastBundleGains = ConcurrentHashMap.newKeySet();
+        lastBundleLosses = ConcurrentHashMap.newKeySet();
         protocols = new HashMap<>();
         this.advertisedListeners = Collections.unmodifiableMap(Maps.newHashMap(advertisedListeners));
     }
