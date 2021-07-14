@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.function.Supplier;
 
+import lombok.EqualsAndHashCode;
 import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.api.AuthenticationDataProvider;
 import org.apache.pulsar.client.api.EncodedAuthenticationParameterSupport;
@@ -40,6 +41,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  * tlsCertFile: A file path for a client certificate. tlsKeyFile: A file path for a client private key.
  *
  */
+@EqualsAndHashCode
 public class AuthenticationTls implements Authentication, EncodedAuthenticationParameterSupport {
     private static final String AUTH_NAME = "tls";
     private static final long serialVersionUID = 1L;
