@@ -502,6 +502,9 @@ public class FunctionConfigUtils {
             WindowConfigUtils.inferMissingArguments(windowConfig);
             functionConfig.setAutoAck(false);
         }
+
+        Resources resources = Resources.mergeWithDefault(functionConfig.getResources());
+        functionConfig.setResources(resources);
     }
 
     private static void doJavaChecks(FunctionConfig functionConfig, ClassLoader clsLoader) {
