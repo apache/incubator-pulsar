@@ -154,7 +154,8 @@
       "reference-terminology",
       "reference-cli-tools",
       "reference-configuration",
-      "reference-metrics"
+      "reference-metrics",
+      "reference-feature-compatibility"
     ]
   },
   "docs-other": {
