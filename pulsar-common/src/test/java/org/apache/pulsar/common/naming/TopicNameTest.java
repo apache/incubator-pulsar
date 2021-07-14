@@ -31,7 +31,7 @@ public class TopicNameTest {
 
     @SuppressWarnings("deprecation")
     @Test
-    public void topic() {
+    public void topic() throws Exception {
         try {
             TopicName.get("://tenant.namespace:topic").getNamespace();
             fail("Should have thrown exception");
@@ -54,7 +54,7 @@ public class TopicNameTest {
                 "persistent://tenant/cluster/namespace/topic");
 
         assertNotEquals(TopicName.get("persistent://tenant/cluster/namespace/topic"),
-            "persistent://tenant/cluster/namespace/topic");
+                "persistent://tenant/cluster/namespace/topic");
 
         assertEquals(TopicName.get("persistent://tenant/cluster/namespace/topic").getDomain(),
                 TopicDomain.persistent);
@@ -162,6 +162,13 @@ public class TopicNameTest {
 
         assertEquals(TopicName.get("persistent://tenant/cluster/namespace/topic")
                 .getPersistenceNamingEncoding(), "tenant/cluster/namespace/persistent/topic");
+
+        assertEquals(TopicName.fromPersistenceNamingEncoding("tenant/cluster/namespace/persistent/topic"),
+                TopicName.get("persistent://tenant/cluster/namespace/topic"));
+
+        assertEquals(TopicName.fromPersistenceNamingEncoding(
+                TopicName.get("persistent://tenant/cluster/namespace/topic").getPersistenceNamingEncoding()),
+                TopicName.get("persistent://tenant/cluster/namespace/topic"));
 
         try {
             TopicName.get("://tenant.namespace");
