@@ -63,13 +63,23 @@ public class RateLimiter implements AutoCloseable{
     private boolean isDispatchRateLimiter;
 
     public RateLimiter(final long permits, final long rateTime, final TimeUnit timeUnit) {
-        this(null, permits, rateTime, timeUnit, null);
+        this(null, permits, rateTime, timeUnit);
     }
 
     public RateLimiter(final long permits, final long rateTime, final TimeUnit timeUnit,
                        RateLimitFunction autoReadResetFunction) {
-        this(null, permits, rateTime, timeUnit, null);
+        this(null, permits, rateTime, timeUnit, autoReadResetFunction);
+    }
+
+    public RateLimiter(final ScheduledExecutorService service, final long permits, final long rateTime,
+                       final TimeUnit timeUnit, RateLimitFunction autoReadResetFunction) {
+        this(service, permits, rateTime, timeUnit);
         this.rateLimitFunction = autoReadResetFunction;
+    }
+
+    public RateLimiter(final ScheduledExecutorService service, final long permits, final long rateTime,
+                       final TimeUnit timeUnit) {
+        this(service, permits, rateTime, timeUnit, (Supplier<Long>) null);
     }
 
     public RateLimiter(final ScheduledExecutorService service, final long permits, final long rateTime,
