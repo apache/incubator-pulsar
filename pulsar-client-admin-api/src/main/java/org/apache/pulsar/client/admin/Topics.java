@@ -444,10 +444,11 @@ public interface Topics {
      *            Number of new partitions of already exist partitioned-topic
      * @param updateLocalTopicOnly
      *            Used by broker for global topic with multiple replicated clusters
-     *
+     * @param force
+     *            Update forcefully without validating existing partitioned topic
      * @returns a future that can be used to track when the partitioned topic is updated
      */
-    void updatePartitionedTopic(String topic, int numPartitions, boolean updateLocalTopicOnly)
+    void updatePartitionedTopic(String topic, int numPartitions, boolean updateLocalTopicOnly, boolean force)
             throws PulsarAdminException;
 
     /**
@@ -463,10 +464,12 @@ public interface Topics {
      *            Number of new partitions of already exist partitioned-topic
      * @param updateLocalTopicOnly
      *            Used by broker for global topic with multiple replicated clusters
-     *
+     * @param force
+     *            Update forcefully without validating existing partitioned topic
      * @return a future that can be used to track when the partitioned topic is updated
      */
-    CompletableFuture<Void> updatePartitionedTopicAsync(String topic, int numPartitions, boolean updateLocalTopicOnly);
+    CompletableFuture<Void> updatePartitionedTopicAsync(String topic, int numPartitions, boolean updateLocalTopicOnly,
+            boolean force);
 
     /**
      * Get metadata of a partitioned topic.
