@@ -202,8 +202,7 @@ You need to create a configuration file before using the Pulsar Debezium connect
 
 ### Configuration
 
-You can use one of the following methods to create a configuration file.
-
+You can use one of the following methods to create a configuration file. you can change the the logical decoding using the *plugin.name* parameter. For more details about *plugin.name*, see [PostgreSQL guide](https://debezium.io/documentation/reference/1.6/connectors/postgresql.html)
 * JSON 
 
     ```json
