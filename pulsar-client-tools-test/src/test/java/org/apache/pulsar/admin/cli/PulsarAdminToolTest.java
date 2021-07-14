@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+
 import org.apache.pulsar.client.admin.Bookies;
 import org.apache.pulsar.client.admin.BrokerStats;
 import org.apache.pulsar.client.admin.Brokers;
@@ -74,11 +75,9 @@ import org.apache.pulsar.common.policies.data.BookiesClusterInfo;
 import org.apache.pulsar.common.policies.data.BookiesRackConfiguration;
 import org.apache.pulsar.common.policies.data.BundlesData;
 import org.apache.pulsar.common.policies.data.ClusterData;
-import org.apache.pulsar.common.policies.data.ClusterDataImpl;
 import org.apache.pulsar.common.policies.data.DelayedDeliveryPolicies;
 import org.apache.pulsar.common.policies.data.DispatchRate;
 import org.apache.pulsar.common.policies.data.FailureDomain;
-import org.apache.pulsar.common.policies.data.FailureDomainImpl;
 import org.apache.pulsar.common.policies.data.InactiveTopicDeleteMode;
 import org.apache.pulsar.common.policies.data.InactiveTopicPolicies;
 import org.apache.pulsar.common.policies.data.ManagedLedgerInternalStats.LedgerInfo;
@@ -1372,26 +1371,29 @@ public class PulsarAdminToolTest {
     @Test
     public void nonPersistentTopics() throws Exception {
         PulsarAdmin admin = Mockito.mock(PulsarAdmin.class);
-        NonPersistentTopics mockTopics = mock(NonPersistentTopics.class);
-        when(admin.nonPersistentTopics()).thenReturn(mockTopics);
+        Topics mockTopics = mock(Topics.class);
+        when(admin.topics()).thenReturn(mockTopics);
 
-        CmdNonPersistentTopics topics = new CmdNonPersistentTopics(() -> admin);
+        CmdTopics topics = new CmdTopics(() -> admin);
 
-        topics.run(split("stats non-persistent://myprop/clust/ns1/ds1"));
-        verify(mockTopics).getStats("non-persistent://myprop/clust/ns1/ds1");
+        topics.run(split("stats non-persistent://myprop/ns1/ds1"));
+        verify(mockTopics).getStats("non-persistent://myprop/ns1/ds1", false, false);
 
-        topics.run(split("stats-internal non-persistent://myprop/clust/ns1/ds1"));
-        verify(mockTopics).getInternalStats("non-persistent://myprop/clust/ns1/ds1");
+        topics.run(split("stats-internal non-persistent://myprop/ns1/ds1"));
+        verify(mockTopics).getInternalStats("non-persistent://myprop/ns1/ds1", false);
 
-        topics.run(split("create-partitioned-topic non-persistent://myprop/clust/ns1/ds1 --partitions 32"));
-        verify(mockTopics).createPartitionedTopic("non-persistent://myprop/clust/ns1/ds1", 32);
+        topics.run(split("create-partitioned-topic non-persistent://myprop/ns1/ds1 --partitions 32"));
+        verify(mockTopics).createPartitionedTopic("non-persistent://myprop/ns1/ds1", 32);
 
-        topics.run(split("list myprop/clust/ns1"));
-        verify(mockTopics).getList("myprop/clust/ns1");
+        topics.run(split("list myprop/ns1"));
+        verify(mockTopics).getList("myprop/ns1", null);
 
-        topics.run(split("list-in-bundle myprop/clust/ns1 --bundle 0x23d70a30_0x26666658"));
-        verify(mockTopics).getListInBundle("myprop/clust/ns1", "0x23d70a30_0x26666658");
+        NonPersistentTopics mockNonPersistentTopics = mock(NonPersistentTopics.class);
+        when(admin.nonPersistentTopics()).thenReturn(mockNonPersistentTopics);
 
+        CmdNonPersistentTopics nonPersistentTopics = new CmdNonPersistentTopics(() -> admin);
+        nonPersistentTopics.run(split("list-in-bundle myprop/clust/ns1 --bundle 0x23d70a30_0x26666658"));
+        verify(mockNonPersistentTopics).getListInBundle("myprop/clust/ns1", "0x23d70a30_0x26666658");
     }
 
     @Test
