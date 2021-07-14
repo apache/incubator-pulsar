@@ -46,6 +46,7 @@ import io.netty.buffer.ByteBuf;
 import io.prometheus.client.Counter;
 
 public class LookupProxyHandler {
+
     private final String throttlingErrorMessage = "Too many concurrent lookup and partitionsMetadata requests";
     private final ProxyService service;
     private final ProxyConnection proxyConnection;
