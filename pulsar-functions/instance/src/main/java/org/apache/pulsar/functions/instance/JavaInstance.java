@@ -32,6 +32,7 @@ import lombok.Data;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.functions.api.Function;
+import org.apache.pulsar.functions.api.RichFunction;
 import org.apache.pulsar.functions.api.Record;
 
 /**
@@ -74,6 +75,24 @@ public class JavaInstance implements AutoCloseable {
         }
     }
 
+    public void setup() throws Exception {
+        if (null != function && function instanceof RichFunction) {
+            try {
+                ((RichFunction) function).setup();
+            } catch (Exception e) {
+                log.error("setup error:", e);
+                throw e;
+            }
+        }
+        if (null != javaUtilFunction && javaUtilFunction instanceof RichFunction) {
+            try {
+                ((RichFunction) javaUtilFunction).setup();
+            } catch (Exception e) {
+                log.error("setup error:", e);
+                throw e;
+            }
+        }
+    }
     @VisibleForTesting
     public JavaExecutionResult handleMessage(Record<?> record, Object input) {
         return handleMessage(record, input, (rec, result) -> {}, cause -> {});
@@ -158,9 +177,25 @@ public class JavaInstance implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public void close() throws Exception {
         context.close();
         executor.shutdown();
+        if (null != function && function instanceof RichFunction) {
+            try {
+                ((RichFunction) function).tearDown();
+            } catch (Exception e) {
+                log.error("function closeResource occurred exception", e);
+                throw e;
+            }
+        }
+        if (null != javaUtilFunction && javaUtilFunction instanceof RichFunction) {
+            try {
+                ((RichFunction) javaUtilFunction).tearDown();
+            } catch (Exception e) {
+                log.error("function closeResource occurred exception", e);
+                throw e;
+            }
+        }
     }
 
     public Map<String, Double> getAndResetMetrics() {
