@@ -357,8 +357,14 @@ public abstract class ZooKeeperCache implements Watcher {
             CompletableFuture<Pair<Entry<Object, Stat>, Long>> zkFuture = new CompletableFuture<>();
 
             // Broker doesn't restart on global-zk session lost: so handling unexpected exception
+            ZooKeeper zkc = this.zkSession.get();
+            if (zkc == null) {
+                zkFuture.completeExceptionally(new IllegalStateException("Currently disconnected from zookeeper"));
+                return zkFuture;
+            }
+
             try {
-                this.zkSession.get().getData(path, watcher, (rc, path1, ctx, content, stat) -> {
+                zkc.getData(path, watcher, (rc, path1, ctx, content, stat) -> {
                     if (rc == Code.OK.intValue()) {
                         try {
                             T obj = deserializer.deserialize(path, content);
