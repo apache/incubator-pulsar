@@ -1417,6 +1417,7 @@ flexible messaging model and an intuitive client API.</description>
                 <exclude>generated-site/**</exclude>
                 <exclude>.github/*.md</exclude>
                 <exclude>**/.idea/**</exclude>
+                <exclude>**/.mvn/**</exclude>
                 <exclude>**/generated/**</exclude>
                 <exclude>**/zk-3.5-test-data/*</exclude>
               </excludes>
@@ -1586,6 +1587,7 @@ flexible messaging model and an intuitive client API.</description>
             <exclude>**/SecurityAuth.audit*</exclude>
             <exclude>**/site2/**</exclude>
             <exclude>**/.idea/**</exclude>
+            <exclude>**/.mvn/**</exclude>
             <exclude>**/*.a</exclude>
             <exclude>**/*.so</exclude>
             <exclude>**/*.so.*</exclude>

@@ -90,6 +90,9 @@ Requirements:
  * Maven 3.6.1+
  * zip
 
+> Note: this project includes a [Maven Wrapper](https://github.com/takari/maven-wrapper) that can be used instead of a system installed Maven.
+> Use it by replacing `mvn` by `./mvnw` on Linux and `mvnw.cmd` on Windows in the commands below.
+
 Compile and install:
 
 ```bash
