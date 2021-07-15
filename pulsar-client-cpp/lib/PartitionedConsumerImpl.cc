@@ -193,17 +193,16 @@ void PartitionedConsumerImpl::handleUnsubscribeAsync(Result result, unsigned int
 
 void PartitionedConsumerImpl::acknowledgeAsync(const MessageId& msgId, ResultCallback callback) {
     int32_t partition = msgId.partition();
-#ifndef NDEBUG
-    Lock consumersLock(consumersMutex_);
-    assert(partition < getNumPartitions() && partition >= 0 && consumers_.size() > partition);
-    consumersLock.unlock();
-#endif
+    assertPartitionIsValid(partition);
     unAckedMessageTrackerPtr_->remove(msgId);
     consumers_[partition]->acknowledgeAsync(msgId, callback);
 }
 
 void PartitionedConsumerImpl::acknowledgeCumulativeAsync(const MessageId& msgId, ResultCallback callback) {
-    callback(ResultOperationNotSupported);
+    int32_t partition = msgId.partition();
+    assertPartitionIsValid(partition);
+    unAckedMessageTrackerPtr_->removeMessagesTill(msgId);
+    consumers_[partition]->acknowledgeCumulativeAsync(msgId, callback);
 }
 
 void PartitionedConsumerImpl::negativeAcknowledge(const MessageId& msgId) {
