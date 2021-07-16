@@ -1944,10 +1944,10 @@ public class BrokerService implements Closeable, ZooKeeperCacheListener<Policies
                         updateBrokerPublisherThrottlingMaxRate());
         // add listener to notify broker dispatch-rate dynamic config
         registerConfigurationListener("brokerDispatchThrottlingMaxMessageRate",
-                (brokerPublisherThrottlingMaxMessageRate) ->
+                (brokerDispatchThrottlingMaxMessageRate) ->
                         updateBrokerDispatchThrottlingMaxRate());
         registerConfigurationListener("brokerDispatchThrottlingMaxByteRate",
-                (brokerPublisherThrottlingMaxByteRate) ->
+                (brokerDispatchThrottlingMaxByteRate) ->
                         updateBrokerDispatchThrottlingMaxRate());
         // add listener to notify topic publish-rate monitoring
         if (!preciseTopicPublishRateLimitingEnable) {
