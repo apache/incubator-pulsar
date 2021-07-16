@@ -3101,7 +3101,7 @@ public class PersistentTopic extends AbstractTopic
         return this.subscriptions.get(subName).getTransactionInPendingAckStats(txnID);
     }
 
-    public CompletableFuture<ManagedLedger> getPendingAckManagedLedger(String subName) {
+    public CompletableFuture<Optional<ManagedLedger>> getPendingAckManagedLedger(String subName) {
         PersistentSubscription subscription = subscriptions.get(subName);
         if (subscription == null) {
             return FutureUtil.failedFuture(new SubscriptionNotFoundException((topic
