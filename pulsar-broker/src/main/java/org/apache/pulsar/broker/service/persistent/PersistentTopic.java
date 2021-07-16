@@ -2534,6 +2534,11 @@ public class PersistentTopic extends AbstractTopic
         return this.dispatchRateLimiter;
     }
 
+    @Override
+    public Optional<DispatchRateLimiter> getBrokerDispatchRateLimiter() {
+        return Optional.ofNullable(this.brokerService.getBrokerDispatchRateLimiter());
+    }
+
     public Optional<SubscribeRateLimiter> getSubscribeRateLimiter() {
         return this.subscribeRateLimiter;
     }
