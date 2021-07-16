@@ -52,6 +52,12 @@ mvn_run_integration_test() {
   )
 }
 
+test_group_pulsar_io() {
+  # Enable Sources once Debezium tests are fixed https://github.com/apache/pulsar/pull/11154
+  # mvn_run_integration_test --retry "$@" -DintegrationTestSuiteFile=pulsar-io-suite.xml -DintegrationTests -Dgroups=source
+  mvn_run_integration_test --retry "$@" -DintegrationTestSuiteFile=pulsar-io-suite.xml -DintegrationTests -Dgroups=sink
+}
+
 test_group_shade() {
   mvn_run_integration_test "$@" -DShadeTests -DtestForkCount=1 -DtestReuseFork=false
 }
